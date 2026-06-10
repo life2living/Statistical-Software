@@ -7,6 +7,7 @@ import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, Dataset
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
 type RowValue = string | number | null;
+type ChartClickParams = { dataIndex?: number; data?: unknown };
 
 const emptyZones: ZoneState = {
   x: [],
@@ -80,7 +81,7 @@ function recommendedCharts(zones: ZoneState, columns: ColumnProfile[]): ChartTyp
 }
 
 function histogram(values: number[], binCount = 12) {
-  if (values.length === 0) return { labels: [], counts: [] };
+  if (values.length === 0) return { labels: [], counts: [], min: 0, max: 0, width: 1, centers: [] };
   const min = Math.min(...values);
   const max = Math.max(...values);
   const width = max === min ? 1 : (max - min) / binCount;
@@ -90,7 +91,49 @@ function histogram(values: number[], binCount = 12) {
     counts[index] += 1;
   }
   const labels = counts.map((_, index) => `${(min + index * width).toFixed(2)}-${(min + (index + 1) * width).toFixed(2)}`);
-  return { labels, counts };
+  const centers = counts.map((_, index) => min + (index + 0.5) * width);
+  return { labels, counts, min, max, width, centers };
+}
+
+function sampleMean(values: number[]) {
+  return values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+}
+
+function sampleStd(values: number[]) {
+  if (values.length < 2) return 0;
+  const center = sampleMean(values);
+  return Math.sqrt(values.reduce((sum, value) => sum + (value - center) ** 2, 0) / (values.length - 1));
+}
+
+function normalCurve(values: number[], bins: ReturnType<typeof histogram>) {
+  const sigma = sampleStd(values);
+  if (values.length < 2 || sigma === 0) return [];
+  const center = sampleMean(values);
+  // Normal PDF per NIST/SEMATECH e-Handbook; scaled by n * bin width for histogram-count overlays.
+  return bins.centers.map((x) => {
+    const density = Math.exp(-0.5 * ((x - center) / sigma) ** 2) / (sigma * Math.sqrt(2 * Math.PI));
+    return density * values.length * bins.width;
+  });
+}
+
+function pointDatum(value: RowValue, rowIndex: number, selectedRows: Set<number>) {
+  const selected = selectedRows.has(rowIndex);
+  return {
+    value,
+    rowIndex,
+    itemStyle: selected ? { color: "#f97316", borderColor: "#7c2d12", borderWidth: 2 } : undefined,
+    symbolSize: selected ? 11 : undefined
+  };
+}
+
+function xyDatum(x: RowValue, y: RowValue, rowIndex: number, selectedRows: Set<number>) {
+  const selected = selectedRows.has(rowIndex);
+  return {
+    value: [x, y],
+    rowIndex,
+    itemStyle: selected ? { color: "#f97316", borderColor: "#7c2d12", borderWidth: 2 } : undefined,
+    symbolSize: selected ? 11 : 7
+  };
 }
 
 function quantile(sorted: number[], q: number) {
@@ -116,7 +159,7 @@ function groupSum(rows: DatasetPreview["rows"], xField: string | null, yField: s
   return [...groups.entries()].slice(0, 30);
 }
 
-function buildOption(chartType: ChartType, rows: DatasetPreview["rows"], zones: ZoneState): EChartsOption {
+function buildOption(chartType: ChartType, rows: DatasetPreview["rows"], zones: ZoneState, selectedRows: Set<number>, showNormalCurve: boolean): EChartsOption {
   const xFields = zones.x.length > 0 ? zones.x : zones.y.slice(0, 1);
   const yFields = zones.y.length > 0 ? zones.y : zones.x.slice(0, 1);
   const xField = first(zones.x);
@@ -133,14 +176,27 @@ function buildOption(chartType: ChartType, rows: DatasetPreview["rows"], zones: 
   if (chartType === "histogram") {
     const fields = [...new Set([...xFields, ...yFields])];
     const firstHistogram = histogram(numericValues(rows, fields[0]));
+    const series: SeriesOption[] = fields.flatMap((field) => {
+      const values = numericValues(rows, field);
+      const bins = histogram(values);
+      const histogramSeries: SeriesOption[] = [{ type: "bar", name: field, data: bins.counts }];
+      if (showNormalCurve) {
+        histogramSeries.push({
+          type: "line",
+          name: `${field} normal curve`,
+          data: normalCurve(values, bins),
+          smooth: true,
+          symbol: "none",
+          lineStyle: { color: "#f97316", width: 2 }
+        });
+      }
+      return histogramSeries;
+    });
     return {
       ...base,
       xAxis: { type: "category", data: firstHistogram.labels },
       yAxis: { type: "value" },
-      series: fields.map((field) => {
-        const bins = histogram(numericValues(rows, field));
-        return { type: "bar", name: field, data: bins.counts };
-      }) as SeriesOption[]
+      series
     };
   }
 
@@ -169,16 +225,16 @@ function buildOption(chartType: ChartType, rows: DatasetPreview["rows"], zones: 
   }
 
   if (chartType === "heatmap") {
-    const xValues = numericValues(rows, xField);
-    const yValues = numericValues(rows, yField);
-    const data = xValues.slice(0, Math.min(xValues.length, yValues.length)).map((value, index) => [value, yValues[index], 1]);
+    const data = rows
+      .map((row, index) => xyDatum(rowValue(row, xField), rowValue(row, yField), index, selectedRows))
+      .filter((item) => Number.isFinite(Number(item.value[0])) && Number.isFinite(Number(item.value[1])));
     return {
       ...base,
       tooltip: { trigger: "item" },
       xAxis: { type: "value", name: xField ?? "X" },
       yAxis: { type: "value", name: yField ?? "Y" },
       visualMap: { min: 0, max: 1, calculable: true, orient: "horizontal", left: "center", bottom: 22 },
-      series: [{ type: "scatter", name: "Density points", symbolSize: 8, data }] as SeriesOption[]
+      series: [{ type: "scatter", name: "Density points", data }] as SeriesOption[]
     };
   }
 
@@ -195,7 +251,7 @@ function buildOption(chartType: ChartType, rows: DatasetPreview["rows"], zones: 
         return {
           type: "line",
           name: field,
-          data: fieldValues(rows, field),
+          data: fieldValues(rows, field).map((value, index) => pointDatum(value, index, selectedRows)),
           markLine: {
             symbol: "none",
             data: [
@@ -218,7 +274,7 @@ function buildOption(chartType: ChartType, rows: DatasetPreview["rows"], zones: 
       xFields.map((xCandidate) => ({
         type,
         name: xFields.length > 1 ? `${field} by ${xCandidate}` : field,
-        data: fieldValues(rows, field),
+        data: fieldValues(rows, field).map((value, index) => pointDatum(value, index, selectedRows)),
         stack: chartType === "stacked_bar" ? "total" : undefined,
         areaStyle: chartType === "area" ? {} : undefined,
         smooth: chartType === "line" || chartType === "area"
@@ -311,6 +367,84 @@ function DropZone({
   );
 }
 
+function RedTriangleMenu({
+  chartType,
+  open,
+  showNormalCurve,
+  selectedCount,
+  onToggle,
+  onToggleNormalCurve,
+  onClearSelection
+}: {
+  chartType: ChartType;
+  open: boolean;
+  showNormalCurve: boolean;
+  selectedCount: number;
+  onToggle: () => void;
+  onToggleNormalCurve: () => void;
+  onClearSelection: () => void;
+}) {
+  return (
+    <div className="red-menu">
+      <button className={open ? "red-triangle active" : "red-triangle"} onClick={onToggle} title="Plot options">
+        ▶
+      </button>
+      {open ? (
+        <div className="red-menu-popover">
+          <button disabled={chartType !== "histogram"} onClick={onToggleNormalCurve}>
+            {showNormalCurve ? "Remove Normal Curve" : "Fit Normal Curve"}
+          </button>
+          <button disabled={selectedCount === 0} onClick={onClearSelection}>
+            Clear Row Selection
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DataPreviewTable({
+  preview,
+  selectedRows,
+  onToggleRow
+}: {
+  preview: DatasetPreview;
+  selectedRows: Set<number>;
+  onToggleRow: (index: number) => void;
+}) {
+  const visible = preview.dataset.columns.slice(0, 8);
+  return (
+    <section className="data-preview-panel">
+      <div className="data-preview-header">
+        <h3>Data Table</h3>
+        <span>{selectedRows.size} selected</span>
+      </div>
+      <div className="data-preview-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Row</th>
+              {visible.map((column) => (
+                <th key={column.name}>{column.name}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {preview.rows.map((row, index) => (
+              <tr key={index} className={selectedRows.has(index) ? "selected-row" : ""} onClick={() => onToggleRow(index)}>
+                <td>{index + 1}</td>
+                {visible.map((column) => (
+                  <td key={column.name}>{String(row[column.name] ?? "")}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const chartRef = useRef<HTMLDivElement>(null);
   const profilerRef = useRef<HTMLDivElement>(null);
@@ -334,6 +468,9 @@ export default function App() {
   const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [plotMenuOpen, setPlotMenuOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [showNormalCurve, setShowNormalCurve] = useState(false);
 
   async function loadDataset(datasetId: string) {
     const datasetPreview = await previewDataset(datasetId);
@@ -348,6 +485,9 @@ export default function App() {
     setFitEffects([]);
     setProfilerValues({});
     setActiveProfileResponse("");
+    setSelectedRows(new Set());
+    setShowNormalCurve(false);
+    setPlotMenuOpen(false);
   }
 
   useEffect(() => {
@@ -365,10 +505,16 @@ export default function App() {
   useEffect(() => {
     if (!chartRef.current) return;
     chartInstance.current = echarts.init(chartRef.current);
+    const handleChartClick = (params: ChartClickParams) => {
+      const rowIndex = rowIndexFromChart(params);
+      if (rowIndex !== null) toggleRowSelection(rowIndex);
+    };
+    chartInstance.current.on("click", handleChartClick);
     const resize = () => chartInstance.current?.resize();
     window.addEventListener("resize", resize);
     return () => {
       window.removeEventListener("resize", resize);
+      chartInstance.current?.off("click", handleChartClick);
       chartInstance.current?.dispose();
       chartInstance.current = null;
     };
@@ -405,8 +551,8 @@ export default function App() {
       chartInstance.current.clear();
       return;
     }
-    chartInstance.current.setOption(buildOption(chartType, preview.rows, zones), true);
-  }, [chartType, preview, zones]);
+    chartInstance.current.setOption(buildOption(chartType, preview.rows, zones, selectedRows, showNormalCurve), true);
+  }, [chartType, preview, selectedRows, showNormalCurve, zones]);
 
   useEffect(() => {
     if (!profilerInstance.current || !fitRun || !profileResponse) return;
@@ -441,7 +587,30 @@ export default function App() {
     setFitEffects([]);
     setProfilerValues({});
     setActiveProfileResponse("");
+    setSelectedRows(new Set());
+    setShowNormalCurve(false);
+    setPlotMenuOpen(false);
     setStatus(`Loaded ${datasetPreview.dataset.name}: ${datasetPreview.dataset.row_count} rows, ${datasetPreview.dataset.columns.length} columns.`);
+  }
+
+  function toggleRowSelection(index: number) {
+    setSelectedRows((current) => {
+      const next = new Set(current);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }
+
+  function rowIndexFromChart(params: ChartClickParams) {
+    if (params.data && typeof params.data === "object" && "rowIndex" in params.data) {
+      const rowIndex = Number((params.data as { rowIndex?: number }).rowIndex);
+      return Number.isInteger(rowIndex) ? rowIndex : null;
+    }
+    return null;
   }
 
   function openFileDialog() {
@@ -759,18 +928,31 @@ export default function App() {
         </aside>
 
         <section className="graph-pane">
-          <div className="chart-recommendations">
-            {chartCatalog.map((type) => (
-              <button
-                key={type}
-                className={`${type === chartType ? "chart-tool active" : "chart-tool"} ${recommendations.includes(type) ? "recommended" : ""}`}
-                onClick={() => setChartType(type)}
-                title={recommendations.includes(type) ? "Recommended for current fields" : type}
-              >
-                <span className={`chart-icon icon-${type}`} />
-                <span>{chartLabels[type]}</span>
-              </button>
-            ))}
+          <div className="graph-toolbar">
+            <RedTriangleMenu
+              chartType={chartType}
+              open={plotMenuOpen}
+              showNormalCurve={showNormalCurve}
+              selectedCount={selectedRows.size}
+              onToggle={() => setPlotMenuOpen((open) => !open)}
+              onToggleNormalCurve={() => {
+                if (chartType === "histogram") setShowNormalCurve((show) => !show);
+              }}
+              onClearSelection={() => setSelectedRows(new Set())}
+            />
+            <div className="chart-recommendations">
+              {chartCatalog.map((type) => (
+                <button
+                  key={type}
+                  className={`${type === chartType ? "chart-tool active" : "chart-tool"} ${recommendations.includes(type) ? "recommended" : ""}`}
+                  onClick={() => setChartType(type)}
+                  title={recommendations.includes(type) ? "Recommended for current fields" : type}
+                >
+                  <span className={`chart-icon icon-${type}`} />
+                  <span>{chartLabels[type]}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="graph-layout">
@@ -800,6 +982,7 @@ export default function App() {
               {model ? <pre>{JSON.stringify({ metrics: model.metrics, coefficients: model.coefficients }, null, 2)}</pre> : <p>Linear model output appears here.</p>}
             </section>
           </div>
+          {preview ? <DataPreviewTable preview={preview} selectedRows={selectedRows} onToggleRow={toggleRowSelection} /> : null}
         </section>
       </section>
       )}
