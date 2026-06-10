@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, OnewayRun, ProcessCapabilityRun } from "./types";
+import type { AnalysisRun, ChartSpec, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ProcessCapabilityRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -84,6 +84,17 @@ export function runOneway(datasetId: string, y: string, x: string): Promise<Onew
       dataset_id: datasetId,
       method: "oneway_anova",
       columns: [y, x]
+    })
+  });
+}
+
+export function runMultivariate(datasetId: string, columns: string[]): Promise<MultivariateRun> {
+  return request<MultivariateRun>("/analysis/run", {
+    method: "POST",
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      method: "multivariate",
+      columns
     })
   });
 }

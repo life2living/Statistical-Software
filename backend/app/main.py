@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, oneway_anova, process_capability, spc_control_limits
+from .analysis import correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
@@ -168,6 +168,16 @@ def run_analysis(request: AnalysisRequest) -> AnalysisRun:
             raise HTTPException(status_code=400, detail=str(error)) from error
         outputs = {"oneway_anova": result}
         interpretation = [f"Computed Oneway analysis for {result['y']} across {int(result['levels'])} levels of {result['x']}."]
+    elif request.method == "multivariate":
+        columns = request.columns or [column.name for column in dataset.columns if column.type == "numeric"]
+        if len(columns) < 2:
+            raise HTTPException(status_code=400, detail="Multivariate analysis requires at least two numeric columns")
+        try:
+            result = multivariate(rows, columns)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        outputs = {"multivariate": result}
+        interpretation = [f"Computed Pearson correlations for {len(result['columns'])} numeric columns."]
     elif request.method == "correlation":
         if len(request.columns) < 2:
             raise HTTPException(status_code=400, detail="Correlation requires two columns")

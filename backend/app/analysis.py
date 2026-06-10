@@ -477,6 +477,68 @@ def tukey_hsd(groups: list[dict[str, Any]], mse: float | None, df_error: int) ->
     return comparisons
 
 
+def multivariate(rows: list[dict[str, Any]], columns: list[str]) -> dict[str, Any]:
+    if len(columns) < 2:
+        raise ValueError("Multivariate analysis requires at least two columns.")
+
+    matrix: list[list[dict[str, Any]]] = []
+    covariance: list[list[float | None]] = []
+    for row_name in columns:
+        matrix_row: list[dict[str, Any]] = []
+        covariance_row: list[float | None] = []
+        for column_name in columns:
+            pairs = numeric_pairs(rows, row_name, column_name)
+            if len(pairs) < 2:
+                matrix_row.append({"x": column_name, "y": row_name, "r": None, "p_value": None, "n": float(len(pairs))})
+                covariance_row.append(None)
+                continue
+            xs = [pair[0] for pair in pairs]
+            ys = [pair[1] for pair in pairs]
+            x_mean = mean(xs)
+            y_mean = mean(ys)
+            sxx = sum((x - x_mean) ** 2 for x in xs)
+            syy = sum((y - y_mean) ** 2 for y in ys)
+            sxy = sum((x - x_mean) * (y - y_mean) for x, y in pairs)
+            covariance_value = sxy / (len(pairs) - 1)
+            if sxx == 0 or syy == 0:
+                r = None
+                p_value = None
+            else:
+                # Pearson correlation and t-test use public formulas from NIST/SciPy documentation.
+                r = sxy / sqrt(sxx * syy)
+                df = len(pairs) - 2
+                if df > 0 and abs(r) < 1:
+                    t_stat = abs(r) * sqrt(df / (1 - r * r))
+                    p_value = float(2 * stats.t.sf(t_stat, df))
+                else:
+                    p_value = 0.0 if df > 0 else None
+            matrix_row.append({"x": column_name, "y": row_name, "r": r, "p_value": p_value, "n": float(len(pairs))})
+            covariance_row.append(covariance_value)
+        matrix.append(matrix_row)
+        covariance.append(covariance_row)
+
+    summaries = [
+        {
+            "column": column,
+            "n": float(len(values)),
+            "mean": mean(values) if values else None,
+            "std": stdev(values) if len(values) > 1 else 0.0,
+            "missing": float(len(rows) - len(values)),
+        }
+        for column in columns
+        for values in [numeric_values(rows, column)]
+    ]
+    return {"columns": columns, "matrix": matrix, "covariance": covariance, "summaries": summaries}
+
+
+def numeric_pairs(rows: list[dict[str, Any]], left_column: str, right_column: str) -> list[tuple[float, float]]:
+    return [
+        (float(row[left_column]), float(row[right_column]))
+        for row in rows
+        if is_numeric(row.get(left_column)) and is_numeric(row.get(right_column))
+    ]
+
+
 def linear_regression(rows: list[dict[str, Any]], target: str, features: list[str]) -> dict[str, Any]:
     if len(features) != 1:
         raise ValueError("MVP linear regression supports exactly one feature.")

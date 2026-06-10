@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runOneway, runProcessCapability, runSpc, saveChart } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, OnewayRun, ProcessCapabilityRun } from "./types";
+import { importDataset, listDatasets, previewDataset, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runMultivariate, runOneway, runProcessCapability, runSpc, saveChart } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ProcessCapabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -420,6 +420,54 @@ function buildOnewayOption(run: OnewayRun, showMeans: boolean, showBox: boolean)
     xAxis: { type: "category", name: result.x, data: levels, axisLabel: { interval: 0, rotate: levels.some((level) => level.length > 12) ? 25 : 0 } },
     yAxis: { type: "value", name: result.y },
     series
+  };
+}
+
+function buildMultivariateOption(run: MultivariateRun, showPValues: boolean, showCovariance: boolean): EChartsOption {
+  const result = run.outputs.multivariate;
+  const values = result.matrix.flatMap((row, rowIndex) =>
+    row.map((cell, columnIndex) => {
+      const value = showCovariance ? result.covariance[rowIndex][columnIndex] : showPValues ? cell.p_value : cell.r;
+      return [columnIndex, rowIndex, value ?? 0, value];
+    })
+  );
+  return {
+    animation: false,
+    tooltip: {
+      formatter: (params) => {
+        const data = (params as unknown as { data: [number, number, number, number | null] }).data;
+        const x = result.columns[data[0]];
+        const y = result.columns[data[1]];
+        const label = showCovariance ? "Covariance" : showPValues ? "p value" : "r";
+        return `${y} × ${x}<br/>${label}: ${data[3] === null ? "NA" : data[3].toFixed(6)}`;
+      }
+    },
+    grid: { left: 130, right: 40, top: 28, bottom: 110 },
+    xAxis: { type: "category", data: result.columns, axisLabel: { interval: 0, rotate: 45 } },
+    yAxis: { type: "category", data: result.columns },
+    visualMap: {
+      min: showPValues ? 0 : showCovariance ? undefined : -1,
+      max: showPValues ? 1 : showCovariance ? undefined : 1,
+      calculable: true,
+      orient: "horizontal",
+      left: "center",
+      bottom: 8,
+      inRange: { color: showPValues ? ["#0f766e", "#f8fafc", "#b91c1c"] : ["#2563eb", "#f8fafc", "#dc2626"] }
+    },
+    series: [
+      {
+        type: "heatmap",
+        name: showCovariance ? "Covariance" : showPValues ? "p values" : "Correlation",
+        data: values,
+        label: {
+          show: true,
+          formatter: (params) => {
+            const value = (params as unknown as { data: [number, number, number, number | null] }).data[3];
+            return value === null ? "" : value.toFixed(showPValues ? 3 : 2);
+          }
+        }
+      }
+    ]
   };
 }
 
@@ -912,6 +960,137 @@ function OnewayReport({
   );
 }
 
+function MultivariateReport({
+  run,
+  menuOpen,
+  showPValues,
+  showCovariance,
+  showSummary,
+  onToggleMenu,
+  onShowCorrelation,
+  onTogglePValues,
+  onToggleCovariance,
+  onToggleSummary
+}: {
+  run: MultivariateRun | null;
+  menuOpen: boolean;
+  showPValues: boolean;
+  showCovariance: boolean;
+  showSummary: boolean;
+  onToggleMenu: () => void;
+  onShowCorrelation: () => void;
+  onTogglePValues: () => void;
+  onToggleCovariance: () => void;
+  onToggleSummary: () => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!hostRef.current || !run) return;
+    if (chartRef.current) chartRef.current.dispose();
+    chartRef.current = echarts.init(hostRef.current);
+    const resize = () => chartRef.current?.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chartRef.current?.dispose();
+      chartRef.current = null;
+    };
+  }, [run]);
+
+  useEffect(() => {
+    if (!chartRef.current || !run) return;
+    chartRef.current.setOption(buildMultivariateOption(run, showPValues, showCovariance), true);
+  }, [run, showCovariance, showPValues]);
+
+  if (!run) {
+    return (
+      <section className="fit-y-report-window">
+        <p>Assign two or more numeric columns, then click Run.</p>
+      </section>
+    );
+  }
+
+  const result = run.outputs.multivariate;
+  return (
+    <section className="fit-y-report-window">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Multivariate options">
+            ▶
+          </button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onShowCorrelation}>Correlation Color Map</button>
+              <button onClick={onTogglePValues}>{showPValues ? "Hide p Value Map" : "p Value Color Map"}</button>
+              <button onClick={onToggleCovariance}>{showCovariance ? "Hide Covariance" : "Covariance Matrix"}</button>
+              <button onClick={onToggleSummary}>{showSummary ? "Hide Simple Statistics" : "Simple Statistics"}</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>Multivariate Correlations</h3>
+        <span>{result.columns.length} columns</span>
+      </div>
+      <div ref={hostRef} className="fit-y-chart multivariate-chart" />
+      <div className="residual-table">
+        <table>
+          <thead>
+            <tr><th>Column</th>{result.columns.map((column) => <th key={column}>{column}</th>)}</tr>
+          </thead>
+          <tbody>
+            {result.matrix.map((row, index) => (
+              <tr key={result.columns[index]}>
+                <td>{result.columns[index]}</td>
+                {row.map((cell) => (
+                  <td key={cell.x}>{cell.r === null ? "" : cell.r.toFixed(6)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {showPValues ? (
+        <div className="residual-table">
+          <table>
+            <thead>
+              <tr><th>Prob &gt; |r|</th>{result.columns.map((column) => <th key={column}>{column}</th>)}</tr>
+            </thead>
+            <tbody>
+              {result.matrix.map((row, index) => (
+                <tr key={result.columns[index]}>
+                  <td>{result.columns[index]}</td>
+                  {row.map((cell) => (
+                    <td key={cell.x}>{cell.p_value === null ? "" : cell.p_value.toFixed(6)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {showSummary ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Column</th><th>N</th><th>Mean</th><th>Std Dev</th><th>Missing</th></tr></thead>
+            <tbody>
+              {result.summaries.map((summary) => (
+                <tr key={summary.column}>
+                  <td>{summary.column}</td>
+                  <td>{summary.n.toFixed(0)}</td>
+                  <td>{summary.mean === null ? "" : summary.mean.toFixed(6)}</td>
+                  <td>{summary.std.toFixed(6)}</td>
+                  <td>{summary.missing.toFixed(0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function CapabilityReport({
   run,
   menuOpen,
@@ -1013,7 +1192,7 @@ export default function App() {
   const [fitRun, setFitRun] = useState<FitModelRun | null>(null);
   const [activeProfileResponse, setActiveProfileResponse] = useState("");
   const [profilerValues, setProfilerValues] = useState<Record<string, number>>({});
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "capability">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "capability">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -1040,6 +1219,12 @@ export default function App() {
   const [showOnewayIntervals, setShowOnewayIntervals] = useState(true);
   const [showOnewayAnova, setShowOnewayAnova] = useState(true);
   const [showOnewayComparisons, setShowOnewayComparisons] = useState(false);
+  const [multivariateY, setMultivariateY] = useState<string[]>([]);
+  const [multivariateRun, setMultivariateRun] = useState<MultivariateRun | null>(null);
+  const [multivariateMenuOpen, setMultivariateMenuOpen] = useState(false);
+  const [showMultivariatePValues, setShowMultivariatePValues] = useState(false);
+  const [showMultivariateCovariance, setShowMultivariateCovariance] = useState(false);
+  const [showMultivariateSummary, setShowMultivariateSummary] = useState(false);
   const [capabilityY, setCapabilityY] = useState<string | null>(null);
   const [capabilityLsl, setCapabilityLsl] = useState("95");
   const [capabilityTarget, setCapabilityTarget] = useState("98");
@@ -1077,6 +1262,9 @@ export default function App() {
     setFitYByXRun(null);
     setOnewayRun(null);
     setFitYMenuOpen(false);
+    setMultivariateY([]);
+    setMultivariateRun(null);
+    setMultivariateMenuOpen(false);
     setCapabilityY(null);
     setCapabilityRun(null);
     setCapabilityMenuOpen(false);
@@ -1193,6 +1381,9 @@ export default function App() {
     setFitYByXRun(null);
     setOnewayRun(null);
     setFitYMenuOpen(false);
+    setMultivariateY([]);
+    setMultivariateRun(null);
+    setMultivariateMenuOpen(false);
     setCapabilityY(null);
     setCapabilityRun(null);
     setCapabilityMenuOpen(false);
@@ -1307,6 +1498,28 @@ export default function App() {
       setDistributionY(seeded.length > 0 ? seeded : numericColumns.slice(0, 1));
     }
     setActiveAnalyzePlatform("distribution");
+    setAnalyzeMenuOpen(false);
+  }
+
+  async function handleMultivariate() {
+    if (!preview) return;
+    const columnsForRun = multivariateY.length > 1 ? multivariateY : numericColumns.slice(0, 4);
+    if (columnsForRun.length < 2) {
+      setStatus("Multivariate requires at least two numeric columns.");
+      return;
+    }
+    const result = await runMultivariate(preview.dataset.id, columnsForRun);
+    setMultivariateRun(result);
+    setMultivariateMenuOpen(true);
+    setStatus(`Multivariate ${result.id}: ${columnsForRun.length} columns.`);
+  }
+
+  function openMultivariatePlatform() {
+    if (multivariateY.length < 2) {
+      const seeded = [...zones.y, ...zones.x].filter((field) => numericColumns.includes(field));
+      setMultivariateY(seeded.length > 1 ? seeded : numericColumns.slice(0, 4));
+    }
+    setActiveAnalyzePlatform("multivariate");
     setAnalyzeMenuOpen(false);
   }
 
@@ -1433,7 +1646,7 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "fitYByX" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
@@ -1446,6 +1659,7 @@ export default function App() {
                 <button className="primary" onClick={openFitModelPlatform}>
                   Fit Model
                 </button>
+                <button onClick={openMultivariatePlatform}>Multivariate Methods</button>
                 <button>Predictive Modeling</button>
                 <button>Specialized Modeling</button>
                 <button>Quality and Process</button>
@@ -1463,7 +1677,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
         <span>{status}</span>
       </section>
 
@@ -1668,6 +1882,85 @@ export default function App() {
             onToggleSummary={() => setShowDistributionSummary((show) => !show)}
             onToggleQuantiles={() => setShowDistributionQuantiles((show) => !show)}
             onToggleNormal={() => setShowDistributionNormal((show) => !show)}
+          />
+        </section>
+      ) : activeAnalyzePlatform === "multivariate" ? (
+        <section className="fit-y-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Assign Roles</h3>
+              <DistributionRoleDrop
+                label="Y Columns"
+                values={multivariateY}
+                multiple
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setMultivariateY((current) => current.includes(field) ? current : [...current, field])}
+                onRemove={(field) => setMultivariateY((current) => current.filter((item) => item !== field))}
+              />
+              <DistributionRoleDrop
+                label="Weight"
+                values={[]}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={() => undefined}
+                onRemove={() => undefined}
+              />
+              <DistributionRoleDrop
+                label="Freq"
+                values={[]}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={() => undefined}
+                onRemove={() => undefined}
+              />
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleMultivariate}>Run</button>
+            <button onClick={() => {
+              setMultivariateY([]);
+              setMultivariateRun(null);
+            }}>
+              Remove
+            </button>
+            <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
+          </aside>
+
+          <MultivariateReport
+            run={multivariateRun}
+            menuOpen={multivariateMenuOpen}
+            showPValues={showMultivariatePValues}
+            showCovariance={showMultivariateCovariance}
+            showSummary={showMultivariateSummary}
+            onToggleMenu={() => setMultivariateMenuOpen((open) => !open)}
+            onShowCorrelation={() => {
+              setShowMultivariatePValues(false);
+              setShowMultivariateCovariance(false);
+            }}
+            onTogglePValues={() => {
+              setShowMultivariatePValues((show) => !show);
+              setShowMultivariateCovariance(false);
+            }}
+            onToggleCovariance={() => {
+              setShowMultivariateCovariance((show) => !show);
+              setShowMultivariatePValues(false);
+            }}
+            onToggleSummary={() => setShowMultivariateSummary((show) => !show)}
           />
         </section>
       ) : activeAnalyzePlatform === "fitYByX" ? (

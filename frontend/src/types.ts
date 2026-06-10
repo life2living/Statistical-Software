@@ -155,6 +155,32 @@ export interface OnewayRun extends AnalysisRun {
   };
 }
 
+export interface MultivariateCell {
+  x: string;
+  y: string;
+  r: number | null;
+  p_value: number | null;
+  n: number;
+}
+
+export interface MultivariateRun extends AnalysisRun {
+  method: "multivariate";
+  outputs: {
+    multivariate: {
+      columns: string[];
+      matrix: MultivariateCell[][];
+      covariance: (number | null)[][];
+      summaries: {
+        column: string;
+        n: number;
+        mean: number | null;
+        std: number;
+        missing: number;
+      }[];
+    };
+  };
+}
+
 export interface ProcessCapabilityRun extends AnalysisRun {
   method: "process_capability";
   outputs: {

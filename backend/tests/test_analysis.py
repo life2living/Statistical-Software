@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, oneway_anova, process_capability, spc_control_limits
+from app.analysis import correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits
 
 
 ROWS = [
@@ -168,3 +168,26 @@ def test_oneway_anova_skips_missing_and_reports_insufficient_levels() -> None:
     assert result["missing"] == 2.0
     assert result["anova"]["status"] == "insufficient_levels"
     assert result["comparisons"] == []
+
+
+def test_multivariate_returns_pairwise_correlation_matrix() -> None:
+    rows = [
+        {"a": 1.0, "b": 2.0, "c": 6.0},
+        {"a": 2.0, "b": 4.0, "c": 5.0},
+        {"a": 3.0, "b": 6.0, "c": 4.0},
+        {"a": 4.0, "b": 8.0, "c": None},
+    ]
+    result = multivariate(rows, ["a", "b", "c"])
+    matrix = result["matrix"]
+
+    assert round(matrix[0][1]["r"], 6) == 1.0
+    assert round(matrix[0][2]["r"], 6) == -1.0
+    assert matrix[0][2]["n"] == 3.0
+    assert result["summaries"][2]["missing"] == 1.0
+
+
+def test_multivariate_zero_variance_returns_null_correlation() -> None:
+    result = multivariate([{"a": 1.0, "b": 2.0}, {"a": 1.0, "b": 3.0}], ["a", "b"])
+
+    assert result["matrix"][0][1]["r"] is None
+    assert result["matrix"][0][1]["p_value"] is None
