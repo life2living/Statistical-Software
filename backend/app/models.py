@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 ChartType = Literal["line", "area", "scatter", "histogram", "box", "bar", "stacked_bar", "pie", "heatmap", "control"]
 ColumnType = Literal["datetime", "numeric", "categorical"]
-AnalysisMethod = Literal["descriptive", "distribution", "fit_y_by_x", "correlation", "spc", "process_capability"]
+AnalysisMethod = Literal["descriptive", "distribution", "fit_y_by_x", "oneway_anova", "correlation", "spc", "process_capability"]
 ModelType = Literal["linear_regression", "standard_least_squares"]
 
 

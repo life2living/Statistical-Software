@@ -4,6 +4,8 @@ from math import sqrt
 from statistics import mean, median, stdev
 from typing import Any
 
+from scipy import stats
+
 
 def is_numeric(value: Any) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool)
@@ -366,6 +368,113 @@ def build_fit_line(xs: list[float], intercept: float, slope: float, x_mean: floa
         standard_error = rmse * sqrt(leverage)
         points.append({"x": x_value, "y": yhat, "lower": yhat - 1.96 * standard_error, "upper": yhat + 1.96 * standard_error})
     return points
+
+
+def oneway_anova(rows: list[dict[str, Any]], y_column: str, x_column: str) -> dict[str, Any]:
+    grouped: dict[str, list[dict[str, float]]] = {}
+    missing = 0
+    for row_index, row in enumerate(rows):
+        y_value = row.get(y_column)
+        x_value = row.get(x_column)
+        if not is_numeric(y_value) or x_value in {None, ""}:
+            missing += 1
+            continue
+        group_name = str(x_value)
+        grouped.setdefault(group_name, []).append({"value": float(y_value), "rowIndex": float(row_index)})
+
+    groups = [
+        oneway_group_summary(name, observations)
+        for name, observations in grouped.items()
+        if observations
+    ]
+    complete_n = sum(group["n"] for group in groups)
+    if complete_n == 0:
+        raise ValueError("Oneway analysis requires at least one complete Y/X row.")
+
+    overall_mean = sum(group["mean"] * group["n"] for group in groups) / complete_n
+    ss_between = sum(group["n"] * (group["mean"] - overall_mean) ** 2 for group in groups)
+    ss_within = sum(
+        sum((observation["value"] - group["mean"]) ** 2 for observation in grouped[group["level"]])
+        for group in groups
+    )
+    ss_total = ss_between + ss_within
+    df_between = max(0, len(groups) - 1)
+    df_within = max(0, int(complete_n) - len(groups))
+    ms_between = ss_between / df_between if df_between > 0 else None
+    ms_within = ss_within / df_within if df_within > 0 else None
+    f_ratio = (ms_between / ms_within) if ms_between is not None and ms_within not in {None, 0.0} else None
+    # One-way ANOVA follows the public NIST fixed-effects decomposition; SciPy supplies the F survival function.
+    p_value = float(stats.f.sf(f_ratio, df_between, df_within)) if f_ratio is not None and df_between > 0 and df_within > 0 else None
+
+    return {
+        "platform": "oneway",
+        "y": y_column,
+        "x": x_column,
+        "n": float(complete_n),
+        "missing": float(missing),
+        "levels": float(len(groups)),
+        "overall_mean": overall_mean,
+        "groups": groups,
+        "anova": {
+            "source": [
+                {"term": x_column, "df": float(df_between), "sum_squares": ss_between, "mean_square": ms_between, "f_ratio": f_ratio, "p_value": p_value},
+                {"term": "Error", "df": float(df_within), "sum_squares": ss_within, "mean_square": ms_within, "f_ratio": None, "p_value": None},
+                {"term": "Total", "df": float(max(0, int(complete_n) - 1)), "sum_squares": ss_total, "mean_square": None, "f_ratio": None, "p_value": None},
+            ],
+            "status": "ok" if df_between > 0 and df_within > 0 else "insufficient_levels",
+        },
+        "comparisons": tukey_hsd(groups, ms_within, df_within),
+        "points": [
+            {"x": group_name, "y": observation["value"], "rowIndex": int(observation["rowIndex"])}
+            for group_name, observations in grouped.items()
+            for observation in observations
+        ],
+    }
+
+
+def oneway_group_summary(level: str, observations: list[dict[str, float]]) -> dict[str, Any]:
+    values = [observation["value"] for observation in observations]
+    n = len(values)
+    center = mean(values)
+    sigma = stdev(values) if n > 1 else 0.0
+    stderr = sigma / sqrt(n) if n > 0 else 0.0
+    margin = float(stats.t.ppf(0.975, n - 1)) * stderr if n > 1 else 0.0
+    return {
+        "level": level,
+        "n": float(n),
+        "mean": center,
+        "std": sigma,
+        "stderr": stderr,
+        "lower95": center - margin,
+        "upper95": center + margin,
+        "min": min(values),
+        "max": max(values),
+    }
+
+
+def tukey_hsd(groups: list[dict[str, Any]], mse: float | None, df_error: int) -> list[dict[str, Any]]:
+    if mse is None or mse <= 0 or df_error <= 0 or len(groups) < 2:
+        return []
+
+    comparisons: list[dict[str, Any]] = []
+    for left_index, left in enumerate(groups):
+        for right in groups[left_index + 1:]:
+            diff = left["mean"] - right["mean"]
+            se = sqrt((mse / 2) * ((1 / left["n"]) + (1 / right["n"])))
+            q_stat = abs(diff) / se if se > 0 else 0.0
+            # Tukey-Kramer pairwise p-values use SciPy's studentized range survival function.
+            p_value = float(stats.studentized_range.sf(q_stat, len(groups), df_error)) if se > 0 else None
+            comparisons.append(
+                {
+                    "left": left["level"],
+                    "right": right["level"],
+                    "difference": diff,
+                    "stderr": se,
+                    "q": q_stat,
+                    "p_value": p_value,
+                }
+            )
+    return comparisons
 
 
 def linear_regression(rows: list[dict[str, Any]], target: str, features: list[str]) -> dict[str, Any]:

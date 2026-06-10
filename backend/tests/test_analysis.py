@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, process_capability, spc_control_limits
+from app.analysis import correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, oneway_anova, process_capability, spc_control_limits
 
 
 ROWS = [
@@ -134,3 +134,37 @@ def test_fit_y_by_x_skips_missing_pairs() -> None:
 def test_fit_y_by_x_rejects_insufficient_rows() -> None:
     with pytest.raises(ValueError):
         fit_y_by_x([{"x": 1.0, "y": None}], y_column="y", x_column="x")
+
+
+def test_oneway_anova_matches_balanced_public_example() -> None:
+    rows = [
+        {"line": "A", "yield": 8.0},
+        {"line": "A", "yield": 9.0},
+        {"line": "A", "yield": 6.0},
+        {"line": "B", "yield": 5.0},
+        {"line": "B", "yield": 4.0},
+        {"line": "B", "yield": 7.0},
+        {"line": "C", "yield": 4.0},
+        {"line": "C", "yield": 3.0},
+        {"line": "C", "yield": 5.0},
+    ]
+
+    result = oneway_anova(rows, "yield", "line")
+    source = result["anova"]["source"]
+
+    assert result["n"] == 9.0
+    assert result["levels"] == 3.0
+    assert round(source[0]["sum_squares"], 6) == 20.666667
+    assert round(source[1]["sum_squares"], 6) == 11.333333
+    assert round(source[0]["f_ratio"], 6) == 5.470588
+    assert len(result["comparisons"]) == 3
+
+
+def test_oneway_anova_skips_missing_and_reports_insufficient_levels() -> None:
+    rows = [{"line": "A", "yield": 1.0}, {"line": None, "yield": 2.0}, {"line": "A", "yield": None}]
+    result = oneway_anova(rows, "yield", "line")
+
+    assert result["n"] == 1.0
+    assert result["missing"] == 2.0
+    assert result["anova"]["status"] == "insufficient_levels"
+    assert result["comparisons"] == []

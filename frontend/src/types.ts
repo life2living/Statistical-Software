@@ -107,6 +107,54 @@ export interface FitYByXRun extends AnalysisRun {
   };
 }
 
+export interface OnewayGroup {
+  level: string;
+  n: number;
+  mean: number;
+  std: number;
+  stderr: number;
+  lower95: number;
+  upper95: number;
+  min: number;
+  max: number;
+}
+
+export interface OnewayRun extends AnalysisRun {
+  method: "oneway_anova";
+  outputs: {
+    oneway_anova: {
+      platform: "oneway";
+      y: string;
+      x: string;
+      n: number;
+      missing: number;
+      levels: number;
+      overall_mean: number;
+      groups: OnewayGroup[];
+      anova: {
+        status: "ok" | "insufficient_levels";
+        source: {
+          term: string;
+          df: number;
+          sum_squares: number;
+          mean_square: number | null;
+          f_ratio: number | null;
+          p_value: number | null;
+        }[];
+      };
+      comparisons: {
+        left: string;
+        right: string;
+        difference: number;
+        stderr: number;
+        q: number;
+        p_value: number | null;
+      }[];
+      points: { x: string; y: number; rowIndex: number }[];
+    };
+  };
+}
+
 export interface ProcessCapabilityRun extends AnalysisRun {
   method: "process_capability";
   outputs: {

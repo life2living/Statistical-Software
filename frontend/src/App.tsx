@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runProcessCapability, runSpc, saveChart } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, ProcessCapabilityRun } from "./types";
+import { importDataset, listDatasets, previewDataset, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runOneway, runProcessCapability, runSpc, saveChart } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, OnewayRun, ProcessCapabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -369,6 +369,60 @@ function buildFitYByXOption(run: FitYByXRun, showFit: boolean, showBand: boolean
   };
 }
 
+function buildOnewayOption(run: OnewayRun, showMeans: boolean, showBox: boolean): EChartsOption {
+  const result = run.outputs.oneway_anova;
+  const levels = result.groups.map((group) => group.level);
+  const series: SeriesOption[] = [
+    {
+      type: "scatter",
+      name: "Observed",
+      data: result.points.map((point) => [point.x, point.y]),
+      symbolSize: 6
+    }
+  ];
+
+  if (showMeans) {
+    series.push({
+      type: "line",
+      name: "Means",
+      data: result.groups.map((group) => [group.level, group.mean]),
+      symbolSize: 8,
+      lineStyle: { color: "#dc2626", width: 2 }
+    });
+  }
+
+  if (showBox) {
+    series.push({
+      type: "custom",
+      name: "Mean 95% CI",
+      renderItem: (params, api) => {
+        const category = api.value(0) as string;
+        const low = api.coord([category, api.value(1) as number]);
+        const high = api.coord([category, api.value(2) as number]);
+        const mid = api.coord([category, api.value(3) as number]);
+        return {
+          type: "group",
+          children: [
+            { type: "line", shape: { x1: low[0], y1: low[1], x2: high[0], y2: high[1] }, style: { stroke: "#475569", lineWidth: 1.5 } },
+            { type: "line", shape: { x1: mid[0] - 12, y1: mid[1], x2: mid[0] + 12, y2: mid[1] }, style: { stroke: "#475569", lineWidth: 1.5 } }
+          ]
+        };
+      },
+      data: result.groups.map((group) => [group.level, group.lower95, group.upper95, group.mean])
+    } as SeriesOption);
+  }
+
+  return {
+    animation: false,
+    tooltip: { trigger: "axis" },
+    legend: { top: 0, type: "scroll" },
+    grid: { left: 64, right: 24, top: 48, bottom: 68 },
+    xAxis: { type: "category", name: result.x, data: levels, axisLabel: { interval: 0, rotate: levels.some((level) => level.length > 12) ? 25 : 0 } },
+    yAxis: { type: "value", name: result.y },
+    series
+  };
+}
+
 function FieldItem({ column }: { column: ColumnProfile }) {
   return (
     <div
@@ -722,6 +776,142 @@ function FitYByXReport({
   );
 }
 
+function OnewayReport({
+  run,
+  menuOpen,
+  showMeans,
+  showIntervals,
+  showAnova,
+  showComparisons,
+  onToggleMenu,
+  onToggleMeans,
+  onToggleIntervals,
+  onToggleAnova,
+  onToggleComparisons
+}: {
+  run: OnewayRun | null;
+  menuOpen: boolean;
+  showMeans: boolean;
+  showIntervals: boolean;
+  showAnova: boolean;
+  showComparisons: boolean;
+  onToggleMenu: () => void;
+  onToggleMeans: () => void;
+  onToggleIntervals: () => void;
+  onToggleAnova: () => void;
+  onToggleComparisons: () => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!hostRef.current || !run) return;
+    if (chartRef.current) chartRef.current.dispose();
+    chartRef.current = echarts.init(hostRef.current);
+    const resize = () => chartRef.current?.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chartRef.current?.dispose();
+      chartRef.current = null;
+    };
+  }, [run]);
+
+  useEffect(() => {
+    if (!chartRef.current || !run) return;
+    chartRef.current.setOption(buildOnewayOption(run, showMeans, showIntervals), true);
+  }, [run, showIntervals, showMeans]);
+
+  if (!run) return null;
+
+  const result = run.outputs.oneway_anova;
+  return (
+    <section className="fit-y-report-window">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Oneway options">
+            ▶
+          </button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onToggleMeans}>{showMeans ? "Remove Means" : "Means"}</button>
+              <button onClick={onToggleIntervals}>{showIntervals ? "Remove Mean 95% CI" : "Mean 95% CI"}</button>
+              <button onClick={onToggleAnova}>{showAnova ? "Hide ANOVA" : "Means/ANOVA"}</button>
+              <button onClick={onToggleComparisons}>{showComparisons ? "Hide Tukey HSD" : "Tukey HSD"}</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>{result.x}-{result.y} Oneway Analysis</h3>
+        <span>{result.n.toFixed(0)} complete rows, {result.missing.toFixed(0)} missing</span>
+      </div>
+      <div ref={hostRef} className="fit-y-chart" />
+      <div className="fit-y-stats">
+        <span>Levels {result.levels.toFixed(0)}</span>
+        <span>Mean {result.overall_mean.toFixed(6)}</span>
+        {result.anova.status !== "ok" ? <span>ANOVA needs at least two populated levels</span> : null}
+      </div>
+      {showAnova ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Source</th><th>DF</th><th>SS</th><th>MS</th><th>F Ratio</th><th>Prob &gt; F</th></tr></thead>
+            <tbody>
+              {result.anova.source.map((row) => (
+                <tr key={row.term}>
+                  <td>{row.term}</td>
+                  <td>{row.df.toFixed(0)}</td>
+                  <td>{row.sum_squares.toFixed(6)}</td>
+                  <td>{row.mean_square === null ? "" : row.mean_square.toFixed(6)}</td>
+                  <td>{row.f_ratio === null ? "" : row.f_ratio.toFixed(6)}</td>
+                  <td>{row.p_value === null ? "" : row.p_value.toFixed(6)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      <div className="residual-table">
+        <table>
+          <thead><tr><th>Level</th><th>N</th><th>Mean</th><th>Std Dev</th><th>Std Err</th><th>Lower 95%</th><th>Upper 95%</th></tr></thead>
+          <tbody>
+            {result.groups.map((group) => (
+              <tr key={group.level}>
+                <td>{group.level}</td>
+                <td>{group.n.toFixed(0)}</td>
+                <td>{group.mean.toFixed(6)}</td>
+                <td>{group.std.toFixed(6)}</td>
+                <td>{group.stderr.toFixed(6)}</td>
+                <td>{group.lower95.toFixed(6)}</td>
+                <td>{group.upper95.toFixed(6)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {showComparisons ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Level A</th><th>Level B</th><th>Difference</th><th>Std Err</th><th>q</th><th>p Value</th></tr></thead>
+            <tbody>
+              {result.comparisons.length === 0 ? (
+                <tr><td colSpan={6}>Pairwise comparisons require at least two levels with residual variance.</td></tr>
+              ) : result.comparisons.map((row) => (
+                <tr key={`${row.left}-${row.right}`}>
+                  <td>{row.left}</td>
+                  <td>{row.right}</td>
+                  <td>{row.difference.toFixed(6)}</td>
+                  <td>{row.stderr.toFixed(6)}</td>
+                  <td>{row.q.toFixed(6)}</td>
+                  <td>{row.p_value === null ? "" : row.p_value.toFixed(6)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function CapabilityReport({
   run,
   menuOpen,
@@ -841,10 +1031,15 @@ export default function App() {
   const [fitYResponse, setFitYResponse] = useState<string | null>(null);
   const [fitXFactor, setFitXFactor] = useState<string | null>(null);
   const [fitYByXRun, setFitYByXRun] = useState<FitYByXRun | null>(null);
+  const [onewayRun, setOnewayRun] = useState<OnewayRun | null>(null);
   const [fitYMenuOpen, setFitYMenuOpen] = useState(false);
   const [showFitYLine, setShowFitYLine] = useState(true);
   const [showFitYBand, setShowFitYBand] = useState(false);
   const [showFitYResiduals, setShowFitYResiduals] = useState(false);
+  const [showOnewayMeans, setShowOnewayMeans] = useState(true);
+  const [showOnewayIntervals, setShowOnewayIntervals] = useState(true);
+  const [showOnewayAnova, setShowOnewayAnova] = useState(true);
+  const [showOnewayComparisons, setShowOnewayComparisons] = useState(false);
   const [capabilityY, setCapabilityY] = useState<string | null>(null);
   const [capabilityLsl, setCapabilityLsl] = useState("95");
   const [capabilityTarget, setCapabilityTarget] = useState("98");
@@ -880,6 +1075,7 @@ export default function App() {
     setFitYResponse(null);
     setFitXFactor(null);
     setFitYByXRun(null);
+    setOnewayRun(null);
     setFitYMenuOpen(false);
     setCapabilityY(null);
     setCapabilityRun(null);
@@ -995,6 +1191,7 @@ export default function App() {
     setFitYResponse(null);
     setFitXFactor(null);
     setFitYByXRun(null);
+    setOnewayRun(null);
     setFitYMenuOpen(false);
     setCapabilityY(null);
     setCapabilityRun(null);
@@ -1115,19 +1312,35 @@ export default function App() {
 
   async function handleFitYByX() {
     if (!preview || !fitYResponse || !fitXFactor) {
-      setStatus("Fit Y by X requires one numeric Y and one numeric X.");
+      setStatus("Fit Y by X requires one numeric Y and one X factor.");
       return;
     }
-    const result = await runFitYByX(preview.dataset.id, fitYResponse, fitXFactor);
-    setFitYByXRun(result);
+    const xType = columns.find((column) => column.name === fitXFactor)?.type;
+    if (xType === "categorical") {
+      const result = await runOneway(preview.dataset.id, fitYResponse, fitXFactor);
+      setOnewayRun(result);
+      setFitYByXRun(null);
+      setStatus(`Oneway ${result.id}: ${fitYResponse} by ${fitXFactor}.`);
+    } else if (xType === "numeric") {
+      const result = await runFitYByX(preview.dataset.id, fitYResponse, fitXFactor);
+      setFitYByXRun(result);
+      setOnewayRun(null);
+      setStatus(`Fit Y by X ${result.id}: ${fitYResponse} by ${fitXFactor}.`);
+    } else {
+      setStatus("Fit Y by X requires a numeric X for regression or a categorical X for Oneway.");
+      return;
+    }
     setFitYMenuOpen(true);
-    setStatus(`Fit Y by X ${result.id}: ${fitYResponse} by ${fitXFactor}.`);
   }
 
   function openFitYByXPlatform() {
     const response = fitYResponse ?? zones.y.find((field) => numericColumns.includes(field)) ?? numericColumns[0] ?? null;
+    const validZoneX = zones.x.find((field) => {
+      const type = columns.find((column) => column.name === field)?.type;
+      return type === "numeric" || type === "categorical";
+    });
     if (!fitYResponse) setFitYResponse(response);
-    if (!fitXFactor) setFitXFactor(zones.x.find((field) => numericColumns.includes(field)) ?? numericColumns.find((field) => field !== response) ?? numericColumns[1] ?? null);
+    if (!fitXFactor) setFitXFactor(validZoneX ?? columns.find((column) => column.type === "categorical")?.name ?? numericColumns.find((field) => field !== response) ?? numericColumns[1] ?? null);
     setActiveAnalyzePlatform("fitYByX");
     setAnalyzeMenuOpen(false);
   }
@@ -1485,7 +1698,7 @@ export default function App() {
                 label="X"
                 values={fitXFactor ? [fitXFactor] : []}
                 multiple={false}
-                numericOnly
+                numericOnly={false}
                 numericColumns={numericColumns}
                 onAdd={(field) => setFitXFactor(field)}
                 onRemove={() => setFitXFactor(null)}
@@ -1500,23 +1713,40 @@ export default function App() {
               setFitYResponse(null);
               setFitXFactor(null);
               setFitYByXRun(null);
+              setOnewayRun(null);
             }}>
               Remove
             </button>
             <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
           </aside>
 
-          <FitYByXReport
-            run={fitYByXRun}
-            menuOpen={fitYMenuOpen}
-            showFit={showFitYLine}
-            showBand={showFitYBand}
-            showResiduals={showFitYResiduals}
-            onToggleMenu={() => setFitYMenuOpen((open) => !open)}
-            onToggleFit={() => setShowFitYLine((show) => !show)}
-            onToggleBand={() => setShowFitYBand((show) => !show)}
-            onToggleResiduals={() => setShowFitYResiduals((show) => !show)}
-          />
+          {onewayRun ? (
+            <OnewayReport
+              run={onewayRun}
+              menuOpen={fitYMenuOpen}
+              showMeans={showOnewayMeans}
+              showIntervals={showOnewayIntervals}
+              showAnova={showOnewayAnova}
+              showComparisons={showOnewayComparisons}
+              onToggleMenu={() => setFitYMenuOpen((open) => !open)}
+              onToggleMeans={() => setShowOnewayMeans((show) => !show)}
+              onToggleIntervals={() => setShowOnewayIntervals((show) => !show)}
+              onToggleAnova={() => setShowOnewayAnova((show) => !show)}
+              onToggleComparisons={() => setShowOnewayComparisons((show) => !show)}
+            />
+          ) : (
+            <FitYByXReport
+              run={fitYByXRun}
+              menuOpen={fitYMenuOpen}
+              showFit={showFitYLine}
+              showBand={showFitYBand}
+              showResiduals={showFitYResiduals}
+              onToggleMenu={() => setFitYMenuOpen((open) => !open)}
+              onToggleFit={() => setShowFitYLine((show) => !show)}
+              onToggleBand={() => setShowFitYBand((show) => !show)}
+              onToggleResiduals={() => setShowFitYResiduals((show) => !show)}
+            />
+          )}
         </section>
       ) : activeAnalyzePlatform === "capability" ? (
         <section className="capability-platform">
