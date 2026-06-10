@@ -185,6 +185,13 @@ input {
   padding: 10px 18px 18px;
 }
 
+.fit-y-platform {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 286px minmax(460px, 1fr) 230px;
+  padding: 10px 18px 18px;
+}
+
 .model-select-columns,
 .model-dialog,
 .distribution-dialog,
@@ -312,6 +319,60 @@ input {
   grid-column: 1 / -1;
   min-height: 320px;
   padding: 8px;
+}
+
+.fit-y-report-window {
+  background: white;
+  border: 1px solid #aeb7c4;
+  grid-column: 1 / -1;
+  min-height: 420px;
+  padding: 0 0 10px;
+}
+
+.fit-y-chart {
+  height: 360px;
+  width: 100%;
+}
+
+.fit-y-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 8px 10px;
+}
+
+.fit-y-stats span {
+  background: #e8f0ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+.residual-table {
+  margin: 0 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.residual-table table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+
+.residual-table th,
+.residual-table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 4px 6px;
+  text-align: right;
+}
+
+.residual-table th {
+  background: #eef2ff;
+  color: #334155;
+  position: sticky;
+  top: 0;
 }
 
 .distribution-card {

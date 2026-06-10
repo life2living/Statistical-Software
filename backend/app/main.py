@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import correlation, describe, distribution, fit_standard_least_squares, linear_regression, process_capability, spc_control_limits
+from .analysis import correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, process_capability, spc_control_limits
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
@@ -150,6 +150,15 @@ def run_analysis(request: AnalysisRequest) -> AnalysisRun:
         )
         outputs = {"distribution": result}
         interpretation = [f"Computed distribution summaries for {len(result['columns'])} response columns."]
+    elif request.method == "fit_y_by_x":
+        if len(request.columns) < 2:
+            raise HTTPException(status_code=400, detail="Fit Y by X requires Y and X columns")
+        try:
+            result = fit_y_by_x(rows, y_column=request.columns[0], x_column=request.columns[1])
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        outputs = {"fit_y_by_x": result}
+        interpretation = [f"Fitted {result['y']} by {result['x']} with R2={result['metrics']['r2']:.3f}."]
     elif request.method == "correlation":
         if len(request.columns) < 2:
             raise HTTPException(status_code=400, detail="Correlation requires two columns")

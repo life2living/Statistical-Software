@@ -1,4 +1,6 @@
-from app.analysis import correlation, describe, distribution, fit_standard_least_squares, linear_regression, process_capability, spc_control_limits
+import pytest
+
+from app.analysis import correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, process_capability, spc_control_limits
 
 
 ROWS = [
@@ -83,3 +85,27 @@ def test_distribution_uses_frequency_and_weight() -> None:
     assert group["missing"] == 1.0
     assert group["mean"] == 15.0
     assert group["quantiles"]["p50"] == 15.0
+
+
+def test_fit_y_by_x_perfect_linear_fit() -> None:
+    result = fit_y_by_x(ROWS, y_column="y", x_column="x")
+
+    assert result["n"] == 4.0
+    assert round(result["correlation"]["r"], 6) == 1.0
+    assert round(result["coefficients"]["slope"], 6) == 2.0
+    assert round(result["metrics"]["r2"], 6) == 1.0
+    assert len(result["fit_line"]) == 25
+
+
+def test_fit_y_by_x_skips_missing_pairs() -> None:
+    rows = [{"x": 1.0, "y": 2.0}, {"x": None, "y": 3.0}, {"x": 2.0, "y": 4.0}]
+    result = fit_y_by_x(rows, y_column="y", x_column="x")
+
+    assert result["n"] == 2.0
+    assert result["missing"] == 1.0
+    assert round(result["coefficients"]["slope"], 6) == 2.0
+
+
+def test_fit_y_by_x_rejects_insufficient_rows() -> None:
+    with pytest.raises(ValueError):
+        fit_y_by_x([{"x": 1.0, "y": None}], y_column="y", x_column="x")

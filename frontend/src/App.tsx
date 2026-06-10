@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runDescriptive, runDistribution, runFitModel, runLinearModel, runSpc, saveChart } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, DistributionRun, FitModelRun, ModelRun } from "./types";
+import { importDataset, listDatasets, previewDataset, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runSpc, saveChart } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -318,6 +318,57 @@ function buildProfilerOption(run: FitModelRun, response: string, values: Record<
   };
 }
 
+function buildFitYByXOption(run: FitYByXRun, showFit: boolean, showBand: boolean): EChartsOption {
+  const result = run.outputs.fit_y_by_x;
+  const series: SeriesOption[] = [
+    {
+      type: "scatter",
+      name: "Observed",
+      data: result.points.map((point) => [point.x, point.y]),
+      symbolSize: 7
+    }
+  ];
+
+  if (showBand) {
+    series.push(
+      {
+        type: "line",
+        name: "Upper 95%",
+        data: result.fit_line.map((point) => [point.x, point.upper]),
+        symbol: "none",
+        lineStyle: { color: "#f97316", type: "dashed", width: 1 }
+      },
+      {
+        type: "line",
+        name: "Lower 95%",
+        data: result.fit_line.map((point) => [point.x, point.lower]),
+        symbol: "none",
+        lineStyle: { color: "#f97316", type: "dashed", width: 1 }
+      }
+    );
+  }
+
+  if (showFit) {
+    series.push({
+      type: "line",
+      name: "Linear Fit",
+      data: result.fit_line.map((point) => [point.x, point.y]),
+      symbol: "none",
+      lineStyle: { color: "#dc2626", width: 2 }
+    });
+  }
+
+  return {
+    animation: false,
+    tooltip: { trigger: "axis" },
+    legend: { top: 0, type: "scroll" },
+    grid: { left: 64, right: 24, top: 48, bottom: 54 },
+    xAxis: { type: "value", name: result.x },
+    yAxis: { type: "value", name: result.y },
+    series
+  };
+}
+
 function FieldItem({ column }: { column: ColumnProfile }) {
   return (
     <div
@@ -573,6 +624,104 @@ function DistributionReport({
   );
 }
 
+function FitYByXReport({
+  run,
+  menuOpen,
+  showFit,
+  showBand,
+  showResiduals,
+  onToggleMenu,
+  onToggleFit,
+  onToggleBand,
+  onToggleResiduals
+}: {
+  run: FitYByXRun | null;
+  menuOpen: boolean;
+  showFit: boolean;
+  showBand: boolean;
+  showResiduals: boolean;
+  onToggleMenu: () => void;
+  onToggleFit: () => void;
+  onToggleBand: () => void;
+  onToggleResiduals: () => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!hostRef.current || !run) return;
+    if (chartRef.current) chartRef.current.dispose();
+    chartRef.current = echarts.init(hostRef.current);
+    const resize = () => chartRef.current?.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chartRef.current?.dispose();
+      chartRef.current = null;
+    };
+  }, [run]);
+
+  useEffect(() => {
+    if (!chartRef.current || !run) return;
+    chartRef.current.setOption(buildFitYByXOption(run, showFit, showBand), true);
+  }, [run, showBand, showFit]);
+
+  if (!run) {
+    return (
+      <section className="fit-y-report-window">
+        <p>Assign numeric Y and X columns, then click Run.</p>
+      </section>
+    );
+  }
+
+  const result = run.outputs.fit_y_by_x;
+  return (
+    <section className="fit-y-report-window">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Fit Y by X options">
+            ▶
+          </button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onToggleFit}>{showFit ? "Remove Fit Line" : "Fit Line"}</button>
+              <button onClick={onToggleBand}>{showBand ? "Remove Confidence Band" : "Confidence Band"}</button>
+              <button onClick={onToggleResiduals}>{showResiduals ? "Hide Residuals" : "Show Residuals"}</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>{result.y} by {result.x}</h3>
+        <span>{result.n.toFixed(0)} complete rows, {result.missing.toFixed(0)} missing</span>
+      </div>
+      <div ref={hostRef} className="fit-y-chart" />
+      <div className="fit-y-stats">
+        <span>r {result.correlation.r.toFixed(6)}</span>
+        <span>R2 {result.metrics.r2.toFixed(6)}</span>
+        <span>RMSE {result.metrics.rmse.toFixed(6)}</span>
+        <span>Slope {result.coefficients.slope.toFixed(6)}</span>
+        <span>Intercept {result.coefficients.intercept.toFixed(6)}</span>
+      </div>
+      {showResiduals ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>X</th><th>Actual</th><th>Predicted</th><th>Residual</th></tr></thead>
+            <tbody>
+              {result.residuals.slice(0, 20).map((row, index) => (
+                <tr key={index}>
+                  <td>{row.x.toFixed(6)}</td>
+                  <td>{row.actual.toFixed(6)}</td>
+                  <td>{row.predicted.toFixed(6)}</td>
+                  <td>{row.residual.toFixed(6)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export default function App() {
   const chartRef = useRef<HTMLDivElement>(null);
   const profilerRef = useRef<HTMLDivElement>(null);
@@ -593,7 +742,7 @@ export default function App() {
   const [fitRun, setFitRun] = useState<FitModelRun | null>(null);
   const [activeProfileResponse, setActiveProfileResponse] = useState("");
   const [profilerValues, setProfilerValues] = useState<Record<string, number>>({});
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -608,6 +757,13 @@ export default function App() {
   const [showDistributionSummary, setShowDistributionSummary] = useState(true);
   const [showDistributionQuantiles, setShowDistributionQuantiles] = useState(true);
   const [showDistributionNormal, setShowDistributionNormal] = useState(false);
+  const [fitYResponse, setFitYResponse] = useState<string | null>(null);
+  const [fitXFactor, setFitXFactor] = useState<string | null>(null);
+  const [fitYByXRun, setFitYByXRun] = useState<FitYByXRun | null>(null);
+  const [fitYMenuOpen, setFitYMenuOpen] = useState(false);
+  const [showFitYLine, setShowFitYLine] = useState(true);
+  const [showFitYBand, setShowFitYBand] = useState(false);
+  const [showFitYResiduals, setShowFitYResiduals] = useState(false);
 
   async function loadDataset(datasetId: string) {
     const datasetPreview = await previewDataset(datasetId);
@@ -631,6 +787,10 @@ export default function App() {
     setDistributionWeight(null);
     setDistributionRun(null);
     setDistributionMenuOpen(null);
+    setFitYResponse(null);
+    setFitXFactor(null);
+    setFitYByXRun(null);
+    setFitYMenuOpen(false);
   }
 
   useEffect(() => {
@@ -739,6 +899,10 @@ export default function App() {
     setDistributionWeight(null);
     setDistributionRun(null);
     setDistributionMenuOpen(null);
+    setFitYResponse(null);
+    setFitXFactor(null);
+    setFitYByXRun(null);
+    setFitYMenuOpen(false);
     setStatus(`Loaded ${datasetPreview.dataset.name}: ${datasetPreview.dataset.row_count} rows, ${datasetPreview.dataset.columns.length} columns.`);
   }
 
@@ -853,6 +1017,25 @@ export default function App() {
     setAnalyzeMenuOpen(false);
   }
 
+  async function handleFitYByX() {
+    if (!preview || !fitYResponse || !fitXFactor) {
+      setStatus("Fit Y by X requires one numeric Y and one numeric X.");
+      return;
+    }
+    const result = await runFitYByX(preview.dataset.id, fitYResponse, fitXFactor);
+    setFitYByXRun(result);
+    setFitYMenuOpen(true);
+    setStatus(`Fit Y by X ${result.id}: ${fitYResponse} by ${fitXFactor}.`);
+  }
+
+  function openFitYByXPlatform() {
+    const response = fitYResponse ?? zones.y.find((field) => numericColumns.includes(field)) ?? numericColumns[0] ?? null;
+    if (!fitYResponse) setFitYResponse(response);
+    if (!fitXFactor) setFitXFactor(zones.x.find((field) => numericColumns.includes(field)) ?? numericColumns.find((field) => field !== response) ?? numericColumns[1] ?? null);
+    setActiveAnalyzePlatform("fitYByX");
+    setAnalyzeMenuOpen(false);
+  }
+
   function openFitModelPlatform() {
     if (fitResponses.length === 0 && zones.y.length > 0) {
       setFitResponses(zones.y.filter((field) => numericColumns.includes(field)));
@@ -911,7 +1094,7 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "fitYByX" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
@@ -919,7 +1102,7 @@ export default function App() {
                 <button className="primary" onClick={openDistributionPlatform}>
                   Distribution
                 </button>
-                <button>Fit Y by X</button>
+                <button onClick={openFitYByXPlatform}>Fit Y by X</button>
                 <button>Tabulate</button>
                 <button className="primary" onClick={openFitModelPlatform}>
                   Fit Model
@@ -939,7 +1122,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : "Graph Builder"}</strong>
         <span>{status}</span>
       </section>
 
@@ -1144,6 +1327,67 @@ export default function App() {
             onToggleSummary={() => setShowDistributionSummary((show) => !show)}
             onToggleQuantiles={() => setShowDistributionQuantiles((show) => !show)}
             onToggleNormal={() => setShowDistributionNormal((show) => !show)}
+          />
+        </section>
+      ) : activeAnalyzePlatform === "fitYByX" ? (
+        <section className="fit-y-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Assign Roles</h3>
+              <DistributionRoleDrop
+                label="Y"
+                values={fitYResponse ? [fitYResponse] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setFitYResponse(field)}
+                onRemove={() => setFitYResponse(null)}
+              />
+              <DistributionRoleDrop
+                label="X"
+                values={fitXFactor ? [fitXFactor] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setFitXFactor(field)}
+                onRemove={() => setFitXFactor(null)}
+              />
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleFitYByX}>Run</button>
+            <button onClick={() => {
+              setFitYResponse(null);
+              setFitXFactor(null);
+              setFitYByXRun(null);
+            }}>
+              Remove
+            </button>
+            <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
+          </aside>
+
+          <FitYByXReport
+            run={fitYByXRun}
+            menuOpen={fitYMenuOpen}
+            showFit={showFitYLine}
+            showBand={showFitYBand}
+            showResiduals={showFitYResiduals}
+            onToggleMenu={() => setFitYMenuOpen((open) => !open)}
+            onToggleFit={() => setShowFitYLine((show) => !show)}
+            onToggleBand={() => setShowFitYBand((show) => !show)}
+            onToggleResiduals={() => setShowFitYResiduals((show) => !show)}
           />
         </section>
         ) : (

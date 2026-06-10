@@ -89,6 +89,24 @@ export interface DistributionRun extends AnalysisRun {
   };
 }
 
+export interface FitYByXRun extends AnalysisRun {
+  method: "fit_y_by_x";
+  outputs: {
+    fit_y_by_x: {
+      y: string;
+      x: string;
+      n: number;
+      missing: number;
+      correlation: { r: number; r2: number };
+      coefficients: { intercept: number; slope: number };
+      metrics: { r2: number; rmse: number; sse: number; df_error: number; mse: number };
+      points: { x: number; y: number; rowIndex: number }[];
+      fit_line: { x: number; y: number; lower: number; upper: number }[];
+      residuals: { x: number; actual: number; predicted: number; residual: number }[];
+    };
+  };
+}
+
 export interface ModelRun {
   id: string;
   target: string;

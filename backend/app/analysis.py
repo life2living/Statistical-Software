@@ -243,6 +243,65 @@ def linear_quantile(sorted_values: list[float], probability: float) -> float:
     return sorted_values[lower] + fraction * (sorted_values[lower + 1] - sorted_values[lower])
 
 
+def fit_y_by_x(rows: list[dict[str, Any]], y_column: str, x_column: str) -> dict[str, Any]:
+    pairs = [
+        (float(row[x_column]), float(row[y_column]))
+        for row in rows
+        if is_numeric(row.get(x_column)) and is_numeric(row.get(y_column))
+    ]
+    if len(pairs) < 2:
+        raise ValueError("Fit Y by X requires at least two complete numeric rows.")
+
+    xs = [pair[0] for pair in pairs]
+    ys = [pair[1] for pair in pairs]
+    x_mean = mean(xs)
+    y_mean = mean(ys)
+    sxx = sum((x - x_mean) ** 2 for x in xs)
+    syy = sum((y - y_mean) ** 2 for y in ys)
+    sxy = sum((x - x_mean) * (y - y_mean) for x, y in pairs)
+
+    slope = 0.0 if sxx == 0 else sxy / sxx
+    intercept = y_mean - slope * x_mean
+    fitted = [(x, y, intercept + slope * x) for x, y in pairs]
+    residuals = [{"x": x, "actual": y, "predicted": yhat, "residual": y - yhat} for x, y, yhat in fitted]
+    sse = sum(item["residual"] ** 2 for item in residuals)
+    df_error = max(0, len(pairs) - 2)
+    mse = sse / df_error if df_error > 0 else 0.0
+    rmse = sqrt(mse) if mse > 0 else 0.0
+    r = 0.0 if sxx == 0 or syy == 0 else sxy / sqrt(sxx * syy)
+    r2 = 0.0 if syy == 0 else 1 - sse / syy
+
+    fit_line = build_fit_line(xs, intercept, slope, x_mean, sxx, rmse, len(pairs))
+    return {
+        "y": y_column,
+        "x": x_column,
+        "n": float(len(pairs)),
+        "missing": float(len(rows) - len(pairs)),
+        "correlation": {"r": r, "r2": r * r},
+        "coefficients": {"intercept": intercept, "slope": slope},
+        "metrics": {"r2": r2, "rmse": rmse, "sse": sse, "df_error": float(df_error), "mse": mse},
+        "points": [{"x": x, "y": y, "rowIndex": index} for index, (x, y) in enumerate(pairs)],
+        "fit_line": fit_line,
+        "residuals": residuals[:80],
+    }
+
+
+def build_fit_line(xs: list[float], intercept: float, slope: float, x_mean: float, sxx: float, rmse: float, n: int) -> list[dict[str, float]]:
+    low = min(xs)
+    high = max(xs)
+    point_count = 25
+    points: list[dict[str, float]] = []
+    # Public simple-regression confidence band formula for the fitted mean response.
+    # 1.96 is the normal approximation used for this MVP's 95% display band.
+    for index in range(point_count):
+        x_value = low if high == low else low + (high - low) * index / (point_count - 1)
+        yhat = intercept + slope * x_value
+        leverage = (1 / n) + (((x_value - x_mean) ** 2) / sxx if sxx > 0 else 0.0)
+        standard_error = rmse * sqrt(leverage)
+        points.append({"x": x_value, "y": yhat, "lower": yhat - 1.96 * standard_error, "upper": yhat + 1.96 * standard_error})
+    return points
+
+
 def linear_regression(rows: list[dict[str, Any]], target: str, features: list[str]) -> dict[str, Any]:
     if len(features) != 1:
         raise ValueError("MVP linear regression supports exactly one feature.")

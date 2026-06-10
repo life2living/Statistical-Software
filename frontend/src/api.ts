@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, Dataset, DatasetPreview, DistributionRun, FitModelRun, ModelRun } from "./types";
+import type { AnalysisRun, ChartSpec, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -62,6 +62,17 @@ export function runDistribution(
       method: "distribution",
       columns,
       parameters: roles
+    })
+  });
+}
+
+export function runFitYByX(datasetId: string, y: string, x: string): Promise<FitYByXRun> {
+  return request<FitYByXRun>("/analysis/run", {
+    method: "POST",
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      method: "fit_y_by_x",
+      columns: [y, x]
     })
   });
 }
