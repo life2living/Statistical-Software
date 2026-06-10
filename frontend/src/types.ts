@@ -54,6 +54,41 @@ export interface AnalysisRun {
   interpretation: string[];
 }
 
+export interface DistributionGroup {
+  group: string;
+  n: number;
+  missing: number;
+  mean: number;
+  std: number;
+  stderr: number;
+  min: number;
+  max: number;
+  quantiles: {
+    p0: number;
+    p25: number;
+    p50: number;
+    p75: number;
+    p100: number;
+  };
+}
+
+export interface DistributionColumn {
+  name: string;
+  by: string | null;
+  freq: string | null;
+  weight: string | null;
+  groups: DistributionGroup[];
+}
+
+export interface DistributionRun extends AnalysisRun {
+  method: "distribution";
+  outputs: {
+    distribution: {
+      columns: DistributionColumn[];
+    };
+  };
+}
+
 export interface ModelRun {
   id: string;
   target: string;

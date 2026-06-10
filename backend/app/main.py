@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import correlation, describe, fit_standard_least_squares, linear_regression, process_capability, spc_control_limits
+from .analysis import correlation, describe, distribution, fit_standard_least_squares, linear_regression, process_capability, spc_control_limits
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
@@ -137,6 +137,19 @@ def run_analysis(request: AnalysisRequest) -> AnalysisRun:
         columns = request.columns or [column.name for column in dataset.columns if column.type == "numeric"]
         outputs = {"columns": describe(rows, columns)}
         interpretation = [f"Computed descriptive statistics for {len(outputs['columns'])} numeric columns."]
+    elif request.method == "distribution":
+        columns = request.columns or [column.name for column in dataset.columns if column.type == "numeric"]
+        if not columns:
+            raise HTTPException(status_code=400, detail="Distribution requires at least one numeric Y column")
+        result = distribution(
+            rows,
+            columns,
+            by=request.parameters.get("by"),
+            freq=request.parameters.get("freq"),
+            weight=request.parameters.get("weight"),
+        )
+        outputs = {"distribution": result}
+        interpretation = [f"Computed distribution summaries for {len(result['columns'])} response columns."]
     elif request.method == "correlation":
         if len(request.columns) < 2:
             raise HTTPException(status_code=400, detail="Correlation requires two columns")

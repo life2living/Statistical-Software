@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, Dataset, DatasetPreview, FitModelRun, ModelRun } from "./types";
+import type { AnalysisRun, ChartSpec, Dataset, DatasetPreview, DistributionRun, FitModelRun, ModelRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -47,6 +47,22 @@ export function runDescriptive(datasetId: string, columns: string[]): Promise<An
   return request<AnalysisRun>("/analysis/run", {
     method: "POST",
     body: JSON.stringify({ dataset_id: datasetId, method: "descriptive", columns })
+  });
+}
+
+export function runDistribution(
+  datasetId: string,
+  columns: string[],
+  roles: { by?: string | null; freq?: string | null; weight?: string | null }
+): Promise<DistributionRun> {
+  return request<DistributionRun>("/analysis/run", {
+    method: "POST",
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      method: "distribution",
+      columns,
+      parameters: roles
+    })
   });
 }
 

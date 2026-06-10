@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runDescriptive, runFitModel, runLinearModel, runSpc, saveChart } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, FitModelRun, ModelRun } from "./types";
+import { importDataset, listDatasets, previewDataset, runDescriptive, runDistribution, runFitModel, runLinearModel, runSpc, saveChart } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, DistributionRun, FitModelRun, ModelRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -445,6 +445,134 @@ function DataPreviewTable({
   );
 }
 
+function DistributionRoleDrop({
+  label,
+  values,
+  multiple,
+  numericOnly,
+  numericColumns,
+  onAdd,
+  onRemove
+}: {
+  label: string;
+  values: string[];
+  multiple: boolean;
+  numericOnly: boolean;
+  numericColumns: string[];
+  onAdd: (field: string) => void;
+  onRemove: (field: string) => void;
+}) {
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const field = event.dataTransfer.getData("text/plain");
+    if (!field) return;
+    if (numericOnly && !numericColumns.includes(field)) return;
+    onAdd(field);
+  }
+
+  return (
+    <div className="role-row">
+      <button>{label}</button>
+      <div className="role-drop" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
+        {values.length > 0 ? (
+          values.map((value) => (
+            <button key={value} className="zone-pill" onClick={() => onRemove(value)}>
+              {value}
+            </button>
+          ))
+        ) : (
+          <em>{multiple ? "drop one or more numeric columns" : numericOnly ? "optional numeric" : "optional"}</em>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DistributionReport({
+  run,
+  openMenu,
+  showSummary,
+  showQuantiles,
+  showNormal,
+  onToggleMenu,
+  onToggleSummary,
+  onToggleQuantiles,
+  onToggleNormal
+}: {
+  run: DistributionRun | null;
+  openMenu: string | null;
+  showSummary: boolean;
+  showQuantiles: boolean;
+  showNormal: boolean;
+  onToggleMenu: (panel: string) => void;
+  onToggleSummary: () => void;
+  onToggleQuantiles: () => void;
+  onToggleNormal: () => void;
+}) {
+  if (!run) {
+    return (
+      <section className="distribution-report-window">
+        <p>Assign Y columns and click Run to create distribution summaries.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="distribution-report-window">
+      {run.outputs.distribution.columns.map((column) => (
+        <article key={column.name} className="distribution-card">
+          <div className="distribution-card-header">
+            <div className="red-menu">
+              <button className={openMenu === column.name ? "red-triangle active" : "red-triangle"} onClick={() => onToggleMenu(column.name)} title="Distribution options">
+                ▶
+              </button>
+              {openMenu === column.name ? (
+                <div className="red-menu-popover">
+                  <button onClick={onToggleSummary}>{showSummary ? "Hide Summary Statistics" : "Show Summary Statistics"}</button>
+                  <button onClick={onToggleQuantiles}>{showQuantiles ? "Hide Quantiles" : "Show Quantiles"}</button>
+                  <button onClick={onToggleNormal}>{showNormal ? "Remove Normal Curve" : "Fit Normal Curve"}</button>
+                </div>
+              ) : null}
+            </div>
+            <h3>{column.name}</h3>
+            <span>{column.by ? `By ${column.by}` : "All rows"}</span>
+          </div>
+          <div className="distribution-groups">
+            {column.groups.map((group) => (
+              <section key={group.group} className="distribution-group">
+                <h4>{group.group}</h4>
+                {showNormal ? (
+                  <div className="normal-overlay-note">
+                    Normal curve: mean {group.mean.toFixed(4)}, std {group.std.toFixed(4)}
+                  </div>
+                ) : null}
+                {showSummary ? (
+                  <table>
+                    <tbody>
+                      <tr><th>N</th><td>{group.n.toFixed(3)}</td><th>Missing</th><td>{group.missing.toFixed(0)}</td></tr>
+                      <tr><th>Mean</th><td>{group.mean.toFixed(6)}</td><th>Std Dev</th><td>{group.std.toFixed(6)}</td></tr>
+                      <tr><th>Std Err</th><td>{group.stderr.toFixed(6)}</td><th>Range</th><td>{group.min.toFixed(6)} to {group.max.toFixed(6)}</td></tr>
+                    </tbody>
+                  </table>
+                ) : null}
+                {showQuantiles ? (
+                  <table>
+                    <tbody>
+                      <tr><th>Minimum</th><td>{group.quantiles.p0.toFixed(6)}</td><th>25%</th><td>{group.quantiles.p25.toFixed(6)}</td></tr>
+                      <tr><th>Median</th><td>{group.quantiles.p50.toFixed(6)}</td><th>75%</th><td>{group.quantiles.p75.toFixed(6)}</td></tr>
+                      <tr><th>Maximum</th><td>{group.quantiles.p100.toFixed(6)}</td><th /></tr>
+                    </tbody>
+                  </table>
+                ) : null}
+              </section>
+            ))}
+          </div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
 export default function App() {
   const chartRef = useRef<HTMLDivElement>(null);
   const profilerRef = useRef<HTMLDivElement>(null);
@@ -465,12 +593,21 @@ export default function App() {
   const [fitRun, setFitRun] = useState<FitModelRun | null>(null);
   const [activeProfileResponse, setActiveProfileResponse] = useState("");
   const [profilerValues, setProfilerValues] = useState<Record<string, number>>({});
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [showNormalCurve, setShowNormalCurve] = useState(false);
+  const [distributionY, setDistributionY] = useState<string[]>([]);
+  const [distributionBy, setDistributionBy] = useState<string | null>(null);
+  const [distributionFreq, setDistributionFreq] = useState<string | null>(null);
+  const [distributionWeight, setDistributionWeight] = useState<string | null>(null);
+  const [distributionRun, setDistributionRun] = useState<DistributionRun | null>(null);
+  const [distributionMenuOpen, setDistributionMenuOpen] = useState<string | null>(null);
+  const [showDistributionSummary, setShowDistributionSummary] = useState(true);
+  const [showDistributionQuantiles, setShowDistributionQuantiles] = useState(true);
+  const [showDistributionNormal, setShowDistributionNormal] = useState(false);
 
   async function loadDataset(datasetId: string) {
     const datasetPreview = await previewDataset(datasetId);
@@ -488,6 +625,12 @@ export default function App() {
     setSelectedRows(new Set());
     setShowNormalCurve(false);
     setPlotMenuOpen(false);
+    setDistributionY([]);
+    setDistributionBy(null);
+    setDistributionFreq(null);
+    setDistributionWeight(null);
+    setDistributionRun(null);
+    setDistributionMenuOpen(null);
   }
 
   useEffect(() => {
@@ -590,6 +733,12 @@ export default function App() {
     setSelectedRows(new Set());
     setShowNormalCurve(false);
     setPlotMenuOpen(false);
+    setDistributionY([]);
+    setDistributionBy(null);
+    setDistributionFreq(null);
+    setDistributionWeight(null);
+    setDistributionRun(null);
+    setDistributionMenuOpen(null);
     setStatus(`Loaded ${datasetPreview.dataset.name}: ${datasetPreview.dataset.row_count} rows, ${datasetPreview.dataset.columns.length} columns.`);
   }
 
@@ -678,6 +827,32 @@ export default function App() {
     setStatus(`Fit Model ${result.id}: ${responses.join(", ")} by ${effects.join(", ")}.`);
   }
 
+  async function handleDistribution() {
+    if (!preview) return;
+    const responses = distributionY.length > 0 ? distributionY : zones.y.filter((field) => numericColumns.includes(field));
+    if (responses.length === 0) {
+      setStatus("Distribution requires at least one numeric Y column.");
+      return;
+    }
+    const result = await runDistribution(preview.dataset.id, responses, {
+      by: distributionBy,
+      freq: distributionFreq,
+      weight: distributionWeight
+    });
+    setDistributionRun(result);
+    setDistributionMenuOpen(result.outputs.distribution.columns[0]?.name ?? null);
+    setStatus(`Distribution ${result.id}: ${responses.join(", ")}${distributionBy ? ` by ${distributionBy}` : ""}.`);
+  }
+
+  function openDistributionPlatform() {
+    if (distributionY.length === 0) {
+      const seeded = zones.y.filter((field) => numericColumns.includes(field));
+      setDistributionY(seeded.length > 0 ? seeded : numericColumns.slice(0, 1));
+    }
+    setActiveAnalyzePlatform("distribution");
+    setAnalyzeMenuOpen(false);
+  }
+
   function openFitModelPlatform() {
     if (fitResponses.length === 0 && zones.y.length > 0) {
       setFitResponses(zones.y.filter((field) => numericColumns.includes(field)));
@@ -736,12 +911,14 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
               <div className="analyze-dropdown">
-                <button>Distribution</button>
+                <button className="primary" onClick={openDistributionPlatform}>
+                  Distribution
+                </button>
                 <button>Fit Y by X</button>
                 <button>Tabulate</button>
                 <button className="primary" onClick={openFitModelPlatform}>
@@ -762,7 +939,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : "Graph Builder"}</strong>
         <span>{status}</span>
       </section>
 
@@ -888,7 +1065,88 @@ export default function App() {
             )}
           </section>
         </section>
-      ) : (
+      ) : activeAnalyzePlatform === "distribution" ? (
+        <section className="distribution-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Assign Roles</h3>
+              <DistributionRoleDrop
+                label="Y"
+                values={distributionY}
+                multiple
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setDistributionY((current) => current.includes(field) ? current : [...current, field])}
+                onRemove={(field) => setDistributionY((current) => current.filter((item) => item !== field))}
+              />
+              <DistributionRoleDrop
+                label="By"
+                values={distributionBy ? [distributionBy] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setDistributionBy(field)}
+                onRemove={() => setDistributionBy(null)}
+              />
+              <DistributionRoleDrop
+                label="Freq"
+                values={distributionFreq ? [distributionFreq] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setDistributionFreq(field)}
+                onRemove={() => setDistributionFreq(null)}
+              />
+              <DistributionRoleDrop
+                label="Weight"
+                values={distributionWeight ? [distributionWeight] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setDistributionWeight(field)}
+                onRemove={() => setDistributionWeight(null)}
+              />
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleDistribution}>Run</button>
+            <button onClick={() => {
+              setDistributionY([]);
+              setDistributionBy(null);
+              setDistributionFreq(null);
+              setDistributionWeight(null);
+              setDistributionRun(null);
+            }}>
+              Remove
+            </button>
+            <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
+          </aside>
+
+          <DistributionReport
+            run={distributionRun}
+            openMenu={distributionMenuOpen}
+            showSummary={showDistributionSummary}
+            showQuantiles={showDistributionQuantiles}
+            showNormal={showDistributionNormal}
+            onToggleMenu={(panel) => setDistributionMenuOpen((current) => current === panel ? null : panel)}
+            onToggleSummary={() => setShowDistributionSummary((show) => !show)}
+            onToggleQuantiles={() => setShowDistributionQuantiles((show) => !show)}
+            onToggleNormal={() => setShowDistributionNormal((show) => !show)}
+          />
+        </section>
+        ) : (
       <section className="builder-body">
         <aside className="data-pane">
           <div className="pane-actions">

@@ -5,13 +5,15 @@ from statistics import mean, median, stdev
 from typing import Any
 
 
+def is_numeric(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
 def numeric_values(rows: list[dict[str, Any]], column: str) -> list[float]:
     values: list[float] = []
     for row in rows:
         value = row.get(column)
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, int | float):
+        if is_numeric(value):
             values.append(float(value))
     return values
 
@@ -88,6 +90,157 @@ def process_capability(rows: list[dict[str, Any]], column: str, lsl: float, usl:
     cp = (usl - lsl) / (6 * sigma)
     cpk = min((usl - center) / (3 * sigma), (center - lsl) / (3 * sigma))
     return {"cp": cp, "cpk": cpk, "mean": center, "std": sigma}
+
+
+def distribution(
+    rows: list[dict[str, Any]],
+    columns: list[str],
+    by: str | None = None,
+    freq: str | None = None,
+    weight: str | None = None,
+) -> dict[str, Any]:
+    output_columns: list[dict[str, Any]] = []
+    for column in columns:
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            group = str(row.get(by) if by else "All")
+            groups.setdefault(group, []).append(row)
+
+        output_columns.append(
+            {
+                "name": column,
+                "by": by,
+                "freq": freq,
+                "weight": weight,
+                "groups": [
+                    distribution_group_summary(group_name, group_rows, column, freq, weight)
+                    for group_name, group_rows in groups.items()
+                ],
+            }
+        )
+    return {"columns": output_columns}
+
+
+def distribution_group_summary(
+    group_name: str,
+    rows: list[dict[str, Any]],
+    column: str,
+    freq: str | None,
+    weight: str | None,
+) -> dict[str, Any]:
+    observations: list[tuple[float, float]] = []
+    missing = 0
+
+    for row in rows:
+        value = row.get(column)
+        row_weight = valid_row_weight(row, freq, weight)
+        if not is_numeric(value) or row_weight <= 0:
+            missing += 1
+            continue
+        observations.append((float(value), row_weight))
+
+    if not observations:
+        return {
+            "group": group_name,
+            "n": 0.0,
+            "missing": float(missing),
+            "mean": 0.0,
+            "std": 0.0,
+            "stderr": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "quantiles": {"p0": 0.0, "p25": 0.0, "p50": 0.0, "p75": 0.0, "p100": 0.0},
+        }
+
+    values = [value for value, _ in observations]
+    weights = [item_weight for _, item_weight in observations]
+    total_weight = sum(weights)
+    center = weighted_mean(values, weights)
+    sigma = weighted_sample_std(values, weights, center)
+    return {
+        "group": group_name,
+        "n": total_weight,
+        "missing": float(missing),
+        "mean": center,
+        "std": sigma,
+        "stderr": sigma / sqrt(total_weight) if total_weight > 0 else 0.0,
+        "min": min(values),
+        "max": max(values),
+        "quantiles": {
+            "p0": weighted_quantile(observations, 0.0),
+            "p25": weighted_quantile(observations, 0.25),
+            "p50": weighted_quantile(observations, 0.5),
+            "p75": weighted_quantile(observations, 0.75),
+            "p100": weighted_quantile(observations, 1.0),
+        },
+    }
+
+
+def valid_row_weight(row: dict[str, Any], freq: str | None, weight: str | None) -> float:
+    combined = 1.0
+    for role_column in [freq, weight]:
+        if not role_column:
+            continue
+        value = row.get(role_column)
+        if not is_numeric(value) or float(value) < 0:
+            return 0.0
+        combined *= float(value)
+    return combined
+
+
+def weighted_mean(values: list[float], weights: list[float]) -> float:
+    total_weight = sum(weights)
+    return sum(value * item_weight for value, item_weight in zip(values, weights)) / total_weight
+
+
+def weighted_sample_std(values: list[float], weights: list[float], center: float) -> float:
+    total_weight = sum(weights)
+    if len(values) < 2 or total_weight <= 0:
+        return 0.0
+
+    # NIST describes sample variance as corrected sum of squares over degrees of freedom.
+    # For reliability weights, the unbiased denominator is sum(w) - sum(w^2) / sum(w).
+    denominator = total_weight - sum(item_weight * item_weight for item_weight in weights) / total_weight
+    if denominator <= 0:
+        return 0.0
+    corrected_sum = sum(item_weight * (value - center) ** 2 for value, item_weight in zip(values, weights))
+    return sqrt(corrected_sum / denominator)
+
+
+def weighted_quantile(observations: list[tuple[float, float]], probability: float) -> float:
+    if not observations:
+        return 0.0
+    if all(item_weight == observations[0][1] for _, item_weight in observations):
+        return linear_quantile(sorted(value for value, _ in observations), probability)
+    if probability <= 0:
+        return min(value for value, _ in observations)
+    if probability >= 1:
+        return max(value for value, _ in observations)
+
+    ordered = sorted(observations, key=lambda item: item[0])
+    total_weight = sum(item_weight for _, item_weight in ordered)
+    target = probability * total_weight
+    cumulative = 0.0
+    for value, item_weight in ordered:
+        cumulative += item_weight
+        if cumulative >= target:
+            return value
+    return ordered[-1][0]
+
+
+def linear_quantile(sorted_values: list[float], probability: float) -> float:
+    if not sorted_values:
+        return 0.0
+    if probability <= 0:
+        return sorted_values[0]
+    if probability >= 1:
+        return sorted_values[-1]
+    position = (len(sorted_values) - 1) * probability
+    lower = int(position)
+    fraction = position - lower
+    if lower + 1 >= len(sorted_values):
+        return sorted_values[lower]
+    return sorted_values[lower] + fraction * (sorted_values[lower + 1] - sorted_values[lower])
 
 
 def linear_regression(rows: list[dict[str, Any]], target: str, features: list[str]) -> dict[str, Any]:
