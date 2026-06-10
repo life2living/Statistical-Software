@@ -77,19 +77,85 @@ def spc_control_limits(rows: list[dict[str, Any]], column: str) -> dict[str, Any
     return {"center": center, "ucl": ucl, "lcl": lcl, "violations": violations}
 
 
-def process_capability(rows: list[dict[str, Any]], column: str, lsl: float, usl: float) -> dict[str, float]:
+def process_capability(rows: list[dict[str, Any]], column: str, lsl: float | None, usl: float | None, target: float | None = None) -> dict[str, Any]:
     values = numeric_values(rows, column)
     if len(values) < 2:
-        return {"cp": 0.0, "cpk": 0.0, "mean": 0.0, "std": 0.0}
+        return empty_capability(column, lsl, usl, target, len(rows))
 
     center = mean(values)
     sigma = stdev(values)
+    missing = len(rows) - len(values)
     if sigma == 0:
-        return {"cp": 0.0, "cpk": 0.0, "mean": center, "std": sigma}
+        cp = cpk = cpl = cpu = 0.0
+    else:
+        # Standard capability indices per public NIST process capability formulas.
+        cp = (usl - lsl) / (6 * sigma) if lsl is not None and usl is not None else 0.0
+        cpl = (center - lsl) / (3 * sigma) if lsl is not None else 0.0
+        cpu = (usl - center) / (3 * sigma) if usl is not None else 0.0
+        if lsl is not None and usl is not None:
+            cpk = min(cpl, cpu)
+        else:
+            cpk = cpl if lsl is not None else cpu
 
-    cp = (usl - lsl) / (6 * sigma)
-    cpk = min((usl - center) / (3 * sigma), (center - lsl) / (3 * sigma))
-    return {"cp": cp, "cpk": cpk, "mean": center, "std": sigma}
+    below = sum(1 for value in values if lsl is not None and value < lsl)
+    above = sum(1 for value in values if usl is not None and value > usl)
+    total_out = below + above
+    out_percent = 100 * total_out / len(values)
+
+    return {
+        "column": column,
+        "lsl": lsl,
+        "target": target,
+        "usl": usl,
+        "n": float(len(values)),
+        "missing": float(missing),
+        "mean": center,
+        "std": sigma,
+        "overall_std": sigma,
+        "cp": cp,
+        "cpk": cpk,
+        "cpl": cpl,
+        "cpu": cpu,
+        "pp": cp,
+        "ppk": cpk,
+        "ppl": cpl,
+        "ppu": cpu,
+        "observed": {
+            "below_lsl": float(below),
+            "above_usl": float(above),
+            "total_out": float(total_out),
+            "out_percent": out_percent,
+        },
+        "spec_distance": {
+            "mean_to_lsl": center - lsl if lsl is not None else None,
+            "usl_to_mean": usl - center if usl is not None else None,
+            "mean_to_target": center - target if target is not None else None,
+        },
+    }
+
+
+def empty_capability(column: str, lsl: float | None, usl: float | None, target: float | None, row_count: int) -> dict[str, Any]:
+    return {
+        "column": column,
+        "lsl": lsl,
+        "target": target,
+        "usl": usl,
+        "n": 0.0,
+        "missing": float(row_count),
+        "mean": 0.0,
+        "std": 0.0,
+        "overall_std": 0.0,
+        "cp": 0.0,
+        "cpk": 0.0,
+        "cpl": 0.0,
+        "cpu": 0.0,
+        "pp": 0.0,
+        "ppk": 0.0,
+        "ppl": 0.0,
+        "ppu": 0.0,
+        "observed": {"below_lsl": 0.0, "above_usl": 0.0, "total_out": 0.0, "out_percent": 0.0},
+        "spec_distance": {"mean_to_lsl": None, "usl_to_mean": None, "mean_to_target": None},
+    }
 
 
 def distribution(

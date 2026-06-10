@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun } from "./types";
+import type { AnalysisRun, ChartSpec, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, ProcessCapabilityRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -81,6 +81,22 @@ export function runSpc(datasetId: string, column: string): Promise<AnalysisRun> 
   return request<AnalysisRun>("/analysis/run", {
     method: "POST",
     body: JSON.stringify({ dataset_id: datasetId, method: "spc", columns: [column] })
+  });
+}
+
+export function runProcessCapability(
+  datasetId: string,
+  column: string,
+  limits: { lsl?: number | null; target?: number | null; usl?: number | null }
+): Promise<ProcessCapabilityRun> {
+  return request<ProcessCapabilityRun>("/analysis/run", {
+    method: "POST",
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      method: "process_capability",
+      columns: [column],
+      parameters: limits
+    })
   });
 }
 

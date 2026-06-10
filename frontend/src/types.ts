@@ -107,6 +107,33 @@ export interface FitYByXRun extends AnalysisRun {
   };
 }
 
+export interface ProcessCapabilityRun extends AnalysisRun {
+  method: "process_capability";
+  outputs: {
+    process_capability: {
+      column: string;
+      lsl: number | null;
+      target: number | null;
+      usl: number | null;
+      n: number;
+      missing: number;
+      mean: number;
+      std: number;
+      overall_std: number;
+      cp: number;
+      cpk: number;
+      cpl: number;
+      cpu: number;
+      pp: number;
+      ppk: number;
+      ppl: number;
+      ppu: number;
+      observed: { below_lsl: number; above_usl: number; total_out: number; out_percent: number };
+      spec_distance: { mean_to_lsl: number | null; usl_to_mean: number | null; mean_to_target: number | null };
+    };
+  };
+}
+
 export interface ModelRun {
   id: string;
   target: string;

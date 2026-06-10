@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runSpc, saveChart } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun } from "./types";
+import { importDataset, listDatasets, previewDataset, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runProcessCapability, runSpc, saveChart } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, ProcessCapabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -722,6 +722,87 @@ function FitYByXReport({
   );
 }
 
+function CapabilityReport({
+  run,
+  menuOpen,
+  showSummary,
+  showIndices,
+  showObserved,
+  onToggleMenu,
+  onToggleSummary,
+  onToggleIndices,
+  onToggleObserved
+}: {
+  run: ProcessCapabilityRun | null;
+  menuOpen: boolean;
+  showSummary: boolean;
+  showIndices: boolean;
+  showObserved: boolean;
+  onToggleMenu: () => void;
+  onToggleSummary: () => void;
+  onToggleIndices: () => void;
+  onToggleObserved: () => void;
+}) {
+  if (!run) {
+    return (
+      <section className="capability-report-window">
+        <p>Assign a process measurement, enter spec limits, then click Run.</p>
+      </section>
+    );
+  }
+
+  const result = run.outputs.process_capability;
+  return (
+    <section className="capability-report-window">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Capability options">
+            ▶
+          </button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onToggleSummary}>{showSummary ? "Hide Summary" : "Show Summary"}</button>
+              <button onClick={onToggleIndices}>{showIndices ? "Hide Capability Indices" : "Show Capability Indices"}</button>
+              <button onClick={onToggleObserved}>{showObserved ? "Hide Out-of-Spec" : "Show Out-of-Spec"}</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>{result.column}</h3>
+        <span>LSL {result.lsl ?? "-"} Target {result.target ?? "-"} USL {result.usl ?? "-"}</span>
+      </div>
+      <div className="capability-grid">
+        {showSummary ? (
+          <table>
+            <tbody>
+              <tr><th>N</th><td>{result.n.toFixed(0)}</td><th>Missing</th><td>{result.missing.toFixed(0)}</td></tr>
+              <tr><th>Mean</th><td>{result.mean.toFixed(6)}</td><th>Std Dev</th><td>{result.std.toFixed(6)}</td></tr>
+              <tr><th>Mean-LSL</th><td>{result.spec_distance.mean_to_lsl?.toFixed(6) ?? "-"}</td><th>USL-Mean</th><td>{result.spec_distance.usl_to_mean?.toFixed(6) ?? "-"}</td></tr>
+            </tbody>
+          </table>
+        ) : null}
+        {showIndices ? (
+          <table>
+            <tbody>
+              <tr><th>Cp</th><td>{result.cp.toFixed(6)}</td><th>Cpk</th><td>{result.cpk.toFixed(6)}</td></tr>
+              <tr><th>CPL</th><td>{result.cpl.toFixed(6)}</td><th>CPU</th><td>{result.cpu.toFixed(6)}</td></tr>
+              <tr><th>Pp</th><td>{result.pp.toFixed(6)}</td><th>Ppk</th><td>{result.ppk.toFixed(6)}</td></tr>
+              <tr><th>PPL</th><td>{result.ppl.toFixed(6)}</td><th>PPU</th><td>{result.ppu.toFixed(6)}</td></tr>
+            </tbody>
+          </table>
+        ) : null}
+        {showObserved ? (
+          <table>
+            <tbody>
+              <tr><th>Below LSL</th><td>{result.observed.below_lsl.toFixed(0)}</td><th>Above USL</th><td>{result.observed.above_usl.toFixed(0)}</td></tr>
+              <tr><th>Total Out</th><td>{result.observed.total_out.toFixed(0)}</td><th>Out %</th><td>{result.observed.out_percent.toFixed(4)}%</td></tr>
+            </tbody>
+          </table>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const chartRef = useRef<HTMLDivElement>(null);
   const profilerRef = useRef<HTMLDivElement>(null);
@@ -742,7 +823,7 @@ export default function App() {
   const [fitRun, setFitRun] = useState<FitModelRun | null>(null);
   const [activeProfileResponse, setActiveProfileResponse] = useState("");
   const [profilerValues, setProfilerValues] = useState<Record<string, number>>({});
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "capability">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -764,6 +845,15 @@ export default function App() {
   const [showFitYLine, setShowFitYLine] = useState(true);
   const [showFitYBand, setShowFitYBand] = useState(false);
   const [showFitYResiduals, setShowFitYResiduals] = useState(false);
+  const [capabilityY, setCapabilityY] = useState<string | null>(null);
+  const [capabilityLsl, setCapabilityLsl] = useState("95");
+  const [capabilityTarget, setCapabilityTarget] = useState("98");
+  const [capabilityUsl, setCapabilityUsl] = useState("100");
+  const [capabilityRun, setCapabilityRun] = useState<ProcessCapabilityRun | null>(null);
+  const [capabilityMenuOpen, setCapabilityMenuOpen] = useState(false);
+  const [showCapabilitySummary, setShowCapabilitySummary] = useState(true);
+  const [showCapabilityIndices, setShowCapabilityIndices] = useState(true);
+  const [showCapabilityObserved, setShowCapabilityObserved] = useState(true);
 
   async function loadDataset(datasetId: string) {
     const datasetPreview = await previewDataset(datasetId);
@@ -791,6 +881,9 @@ export default function App() {
     setFitXFactor(null);
     setFitYByXRun(null);
     setFitYMenuOpen(false);
+    setCapabilityY(null);
+    setCapabilityRun(null);
+    setCapabilityMenuOpen(false);
   }
 
   useEffect(() => {
@@ -903,6 +996,9 @@ export default function App() {
     setFitXFactor(null);
     setFitYByXRun(null);
     setFitYMenuOpen(false);
+    setCapabilityY(null);
+    setCapabilityRun(null);
+    setCapabilityMenuOpen(false);
     setStatus(`Loaded ${datasetPreview.dataset.name}: ${datasetPreview.dataset.row_count} rows, ${datasetPreview.dataset.columns.length} columns.`);
   }
 
@@ -1036,6 +1132,36 @@ export default function App() {
     setAnalyzeMenuOpen(false);
   }
 
+  function optionalNumber(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  async function handleCapability() {
+    if (!preview || !capabilityY) {
+      setStatus("Process Capability requires one numeric process column.");
+      return;
+    }
+    const result = await runProcessCapability(preview.dataset.id, capabilityY, {
+      lsl: optionalNumber(capabilityLsl),
+      target: optionalNumber(capabilityTarget),
+      usl: optionalNumber(capabilityUsl)
+    });
+    setCapabilityRun(result);
+    setCapabilityMenuOpen(true);
+    setStatus(`Process Capability ${result.id}: ${capabilityY}.`);
+  }
+
+  function openCapabilityPlatform() {
+    if (!capabilityY) {
+      setCapabilityY(zones.y.find((field) => numericColumns.includes(field)) ?? numericColumns[0] ?? null);
+    }
+    setActiveAnalyzePlatform("capability");
+    setAnalyzeMenuOpen(false);
+  }
+
   function openFitModelPlatform() {
     if (fitResponses.length === 0 && zones.y.length > 0) {
       setFitResponses(zones.y.filter((field) => numericColumns.includes(field)));
@@ -1116,13 +1242,15 @@ export default function App() {
           <button className={activeAnalyzePlatform === "graph" ? "menu-button active" : "menu-button"} onClick={() => setActiveAnalyzePlatform("graph")}>
             Graph
           </button>
-          <span>SPC</span>
+          <button className={activeAnalyzePlatform === "capability" ? "menu-button active" : "menu-button"} onClick={openCapabilityPlatform}>
+            SPC
+          </button>
           <span>Help</span>
         </nav>
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
         <span>{status}</span>
       </section>
 
@@ -1388,6 +1516,62 @@ export default function App() {
             onToggleFit={() => setShowFitYLine((show) => !show)}
             onToggleBand={() => setShowFitYBand((show) => !show)}
             onToggleResiduals={() => setShowFitYResiduals((show) => !show)}
+          />
+        </section>
+      ) : activeAnalyzePlatform === "capability" ? (
+        <section className="capability-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Process Measurement</h3>
+              <DistributionRoleDrop
+                label="Y"
+                values={capabilityY ? [capabilityY] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setCapabilityY(field)}
+                onRemove={() => setCapabilityY(null)}
+              />
+              <div className="spec-limit-grid">
+                <label>LSL<input value={capabilityLsl} onChange={(event) => setCapabilityLsl(event.target.value)} /></label>
+                <label>Target<input value={capabilityTarget} onChange={(event) => setCapabilityTarget(event.target.value)} /></label>
+                <label>USL<input value={capabilityUsl} onChange={(event) => setCapabilityUsl(event.target.value)} /></label>
+              </div>
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleCapability}>Run</button>
+            <button onClick={() => {
+              setCapabilityY(null);
+              setCapabilityRun(null);
+            }}>
+              Remove
+            </button>
+            <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
+          </aside>
+
+          <CapabilityReport
+            run={capabilityRun}
+            menuOpen={capabilityMenuOpen}
+            showSummary={showCapabilitySummary}
+            showIndices={showCapabilityIndices}
+            showObserved={showCapabilityObserved}
+            onToggleMenu={() => setCapabilityMenuOpen((open) => !open)}
+            onToggleSummary={() => setShowCapabilitySummary((show) => !show)}
+            onToggleIndices={() => setShowCapabilityIndices((show) => !show)}
+            onToggleObserved={() => setShowCapabilityObserved((show) => !show)}
           />
         </section>
         ) : (

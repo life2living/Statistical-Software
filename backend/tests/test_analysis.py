@@ -30,8 +30,33 @@ def test_spc_returns_limits() -> None:
 
 
 def test_process_capability() -> None:
-    result = process_capability(ROWS, "x", 0.0, 6.0)
+    result = process_capability(ROWS, "x", 0.0, 6.0, target=3.0)
     assert result["cp"] > 0
+    assert result["cpk"] == min(result["cpl"], result["cpu"])
+    assert result["observed"]["total_out"] == 0.0
+    assert result["spec_distance"]["mean_to_target"] == -0.5
+
+
+def test_process_capability_skips_missing_values() -> None:
+    result = process_capability([{"x": 1.0}, {"x": None}, {"x": 5.0}], "x", 2.0, 4.0)
+    assert result["n"] == 2.0
+    assert result["missing"] == 1.0
+    assert result["observed"]["below_lsl"] == 1.0
+    assert result["observed"]["above_usl"] == 1.0
+
+
+def test_process_capability_one_sided_limit() -> None:
+    result = process_capability(ROWS, "x", 0.0, None)
+    assert result["cp"] == 0.0
+    assert result["cpu"] == 0.0
+    assert result["cpk"] == result["cpl"]
+
+
+def test_process_capability_zero_variance() -> None:
+    result = process_capability([{"x": 2.0}, {"x": 2.0}], "x", 1.0, 3.0)
+    assert result["std"] == 0.0
+    assert result["cp"] == 0.0
+    assert result["cpk"] == 0.0
 
 
 def test_linear_regression_one_feature() -> None:

@@ -172,11 +172,12 @@ def run_analysis(request: AnalysisRequest) -> AnalysisRun:
         interpretation = [f"Found {len(result['violations'])} points outside 3-sigma control limits for {column}."]
     elif request.method == "process_capability":
         column = request.columns[0] if request.columns else "quality_score"
-        lsl = float(request.parameters.get("lsl", 95))
-        usl = float(request.parameters.get("usl", 100))
-        result = process_capability(rows, column, lsl, usl)
+        lsl = float(request.parameters["lsl"]) if request.parameters.get("lsl") not in {None, ""} else None
+        usl = float(request.parameters["usl"]) if request.parameters.get("usl") not in {None, ""} else None
+        target = float(request.parameters["target"]) if request.parameters.get("target") not in {None, ""} else None
+        result = process_capability(rows, column, lsl, usl, target)
         outputs = {"process_capability": result}
-        interpretation = [f"Cp={result['cp']:.2f}, Cpk={result['cpk']:.2f} for {column} with limits {lsl:g}-{usl:g}."]
+        interpretation = [f"Cp={result['cp']:.2f}, Cpk={result['cpk']:.2f} for {column}."]
     else:
         raise HTTPException(status_code=400, detail="Unsupported analysis method")
 
