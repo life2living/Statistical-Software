@@ -133,6 +133,7 @@ class FitModelRequest(BaseModel):
 
 class SaveFitDiagnosticsRequest(BaseModel):
     run_id: str
+    include_formula: bool = False
 
 
 class ProfilerEffect(BaseModel):
@@ -156,8 +157,10 @@ class FitModelRun(BaseModel):
     anova: dict[str, list[dict[str, Any]]]
     parameter_estimates: dict[str, list[dict[str, Any]]]
     effect_tests: dict[str, list[dict[str, Any]]]
+    effect_leverage: dict[str, list[dict[str, Any]]]
     residuals: dict[str, list[dict[str, float]]]
     information_criteria: dict[str, dict[str, float]]
+    prediction_formulas: dict[str, str]
     profiler_effects: list[ProfilerEffect]
     profiler: dict[str, dict[str, list[dict[str, float]]]]
     status: Literal["completed", "failed"]

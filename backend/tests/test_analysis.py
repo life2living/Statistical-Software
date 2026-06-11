@@ -92,6 +92,8 @@ def test_fit_standard_least_squares_profiler() -> None:
     assert round(result["anova"]["y"][0]["sum_squares"], 6) == 20.0
     assert result["parameter_estimates"]["y"][1]["term"] == "x"
     assert round(result["parameter_estimates"]["y"][1]["estimate"], 6) == 2.0
+    assert result["prediction_formulas"]["y"].startswith("y Predicted =")
+    assert result["effect_leverage"]["y"][0]["effect"] == "x"
     assert result["information_criteria"]["y"]["aicc"] <= result["information_criteria"]["y"]["aic"] + 100
     assert len(result["residuals"]["y"]) == 4
     assert result["residuals"]["y"][0]["cook"] >= 0

@@ -13,6 +13,8 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
 - Expand the top-left Fit Model red triangle menu with JMP-style report groups for display tables, profilers, row diagnostics, and saved columns.
 - Support Factor Profiler show/hide from the red triangle menu.
 - Save predicted values, residuals, studentized residuals, leverage, and Cook distance back into the active in-memory data table.
+- Display effect leverage chart data from the OLS term tests.
+- Save a clean-room prediction formula expression alongside diagnostic columns.
 
 ## Backend
 
@@ -20,16 +22,18 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
   - `anova[response]`: Model, Error, and Total rows.
   - `parameter_estimates[response]`: estimate, standard error, t ratio, and two-sided t p-value.
   - `effect_tests[response]`: one-degree effect F tests for each non-intercept term.
+  - `effect_leverage[response]`: effect leverage bar-chart rows derived from the same public coefficient t/F tests.
   - `residuals[response]`: actual, predicted, raw residual, studentized residual, leverage, and Cook distance.
   - `information_criteria[response]`: AIC, AICc, and BIC from Gaussian OLS log-likelihood.
-- `POST /fit-model/save-diagnostics` writes row diagnostics from a Fit Model run back to the source dataset and refreshes column profiles.
+- `prediction_formulas[response]`: deterministic OLS expression for the response's predicted value.
+- `POST /fit-model/save-diagnostics` writes row diagnostics from a Fit Model run back to the source dataset and refreshes column profiles. When `include_formula` is true, it also adds a prediction formula string column.
 - Math uses ordinary least squares normal equations. Probability calculations use SciPy survival functions for F and t distributions.
 - Missing rows are excluded per response/effect complete-case filtering.
 
 ## Frontend
 
 - The Fit Model output keeps the existing Prediction Profiler and appends a response-specific diagnostics panel.
-- The top-left report red triangle menu uses grouped actions for Fit Summary, ANOVA, Parameter Estimates, Effect Tests, AICc, Factor Profiler, row diagnostic plots, and saved diagnostic columns.
+- The top-left report red triangle menu uses grouped actions for Fit Summary, ANOVA, Parameter Estimates, Effect Tests, Effect Leverage, AICc, Factor Profiler, row diagnostic plots, and saved prediction/diagnostic columns.
 - Default launch behavior now chooses a numeric effect even when Graph Builder's X role contains a timestamp, so the sample dataset can run Fit Model immediately.
 
 ## Validation

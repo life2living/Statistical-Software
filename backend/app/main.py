@@ -292,8 +292,10 @@ def run_fit_model(request: FitModelRequest) -> FitModelRun:
         anova=result["anova"],
         parameter_estimates=result["parameter_estimates"],
         effect_tests=result["effect_tests"],
+        effect_leverage=result["effect_leverage"],
         residuals=result["residuals"],
         information_criteria=result["information_criteria"],
+        prediction_formulas=result["prediction_formulas"],
         profiler_effects=result["profiler_effects"],
         profiler=result["profiler"],
         status="completed",
@@ -321,9 +323,12 @@ def save_fit_model_diagnostics(request: SaveFitDiagnosticsRequest) -> DatasetPre
             f"{response} Leverage": "leverage",
             f"{response} Cook's D": "cook",
         }
+        formula_column = f"{response} Prediction Formula"
         for row in rows:
             for column in columns:
                 row[column] = None
+            if request.include_formula:
+                row[formula_column] = run.prediction_formulas.get(response)
         for diagnostic in run.residuals.get(response, []):
             row_index = int(diagnostic.get("sourceRowIndex", diagnostic["rowIndex"]))
             if 0 <= row_index < len(rows):

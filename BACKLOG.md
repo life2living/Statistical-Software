@@ -24,7 +24,8 @@
 - [ ] Control Chart Builder Xbar-R, P/NP/C/U charts, extended rules, and full phase-limit recomputation.
 - [x] Fit Model ANOVA tables, term effects, parameter estimates, and residual diagnostics.
 - [x] Fit Model red triangle menu expansion with Factor Profiler toggle, AICc, and saved diagnostic columns.
-- [ ] Fit Model lack-of-fit, effect leverage plots, prediction formula columns, and richer profiler options.
+- [x] Fit Model effect leverage plots and prediction formula columns.
+- [ ] Fit Model lack-of-fit, richer profiler options, desirability, confidence intervals, and formula-column execution.
 - [ ] Tabulate platform for grouped summary tables.
 - [ ] Pareto, Gauge R&R, Variability Chart, and measurement system analysis.
 

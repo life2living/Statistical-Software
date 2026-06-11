@@ -685,8 +685,10 @@ def fit_standard_least_squares(
     anova: dict[str, list[dict[str, Any]]] = {}
     parameter_estimates: dict[str, list[dict[str, Any]]] = {}
     effect_tests: dict[str, list[dict[str, Any]]] = {}
+    effect_leverage: dict[str, list[dict[str, Any]]] = {}
     residual_diagnostics: dict[str, list[dict[str, float]]] = {}
     information_criteria: dict[str, dict[str, float]] = {}
+    prediction_formulas: dict[str, str] = {}
     profiler: dict[str, dict[str, list[dict[str, float]]]] = {}
     xtx = cross_product(design)
     inverse_xtx = invert_matrix([[value + (1e-9 if row == column else 0.0) for column, value in enumerate(values)] for row, values in enumerate(xtx)])
@@ -719,6 +721,7 @@ def fit_standard_least_squares(
         aicc = aic + (2 * p * (p + 1) / (n - p - 1)) if n > p + 1 else aic
 
         coefficients[response] = {term: beta[index] for index, term in enumerate(terms)}
+        prediction_formulas[response] = format_prediction_formula(response, coefficients[response])
         metrics[response] = {"r2": r2, "adj_r2": adj_r2, "rmse": rmse, "n": float(n), "terms": float(p), "sse": sse, "sst": sst, "mse": mse}
         information_criteria[response] = {"aic": aic, "aicc": aicc, "bic": bic}
         anova[response] = [
@@ -728,6 +731,7 @@ def fit_standard_least_squares(
         ]
         parameter_estimates[response] = []
         effect_tests[response] = []
+        effect_leverage[response] = []
         for index, term in enumerate(terms):
             estimate = beta[index]
             stderr = sqrt(max(0.0, mse * inverse_xtx[index][index])) if inverse_xtx else 0.0
@@ -736,7 +740,19 @@ def fit_standard_least_squares(
             parameter_estimates[response].append({"term": term, "estimate": estimate, "stderr": stderr, "t_ratio": t_ratio, "p_value": p_value})
             if term != "Intercept":
                 f_value = t_ratio * t_ratio if t_ratio is not None else None
-                effect_tests[response].append({"effect": term, "df": 1.0, "sum_squares": (f_value or 0.0) * mse, "f_ratio": f_value, "p_value": p_value})
+                sum_squares = (f_value or 0.0) * mse
+                effect_tests[response].append({"effect": term, "df": 1.0, "sum_squares": sum_squares, "f_ratio": f_value, "p_value": p_value})
+                # Effect leverage chart data is derived from public OLS coefficient tests.
+                effect_leverage[response].append(
+                    {
+                        "effect": term,
+                        "estimate": estimate,
+                        "sum_squares": sum_squares,
+                        "f_ratio": f_value,
+                        "p_value": p_value,
+                        "leverage_score": sqrt(max(f_value or 0.0, 0.0)),
+                    }
+                )
         residual_diagnostics[response] = []
         for index, (actual, estimate, vector) in enumerate(zip(y, predicted, design)):
             residual = actual - estimate
@@ -765,11 +781,23 @@ def fit_standard_least_squares(
         "anova": anova,
         "parameter_estimates": parameter_estimates,
         "effect_tests": effect_tests,
+        "effect_leverage": effect_leverage,
         "residuals": residual_diagnostics,
         "information_criteria": information_criteria,
+        "prediction_formulas": prediction_formulas,
         "profiler_effects": profiler_effects,
         "profiler": profiler,
     }
+
+
+def format_prediction_formula(response: str, coefficients: dict[str, float]) -> str:
+    expression = f"{response} Predicted = {coefficients.get('Intercept', 0.0):.12g}"
+    for term, estimate in coefficients.items():
+        if term == "Intercept":
+            continue
+        sign = "+" if estimate >= 0 else "-"
+        expression += f" {sign} {abs(estimate):.12g}*{term}"
+    return expression
 
 
 def model_vector(row_or_values: dict[str, Any], effects: list[str], include_quadratic: bool) -> list[float]:

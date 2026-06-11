@@ -353,6 +353,25 @@ function buildFitDiagnosticOption(run: FitModelRun, response: string, mode: "res
   };
 }
 
+function buildEffectLeverageOption(run: FitModelRun, response: string): EChartsOption {
+  const rows = run.effect_leverage[response] ?? [];
+  return {
+    animation: false,
+    tooltip: { trigger: "axis" },
+    grid: { left: 120, right: 36, top: 24, bottom: 34 },
+    xAxis: { type: "value", name: "Leverage score" },
+    yAxis: { type: "category", data: rows.map((row) => row.effect) },
+    series: [
+      {
+        type: "bar",
+        name: "Effect Leverage",
+        itemStyle: { color: "#0f766e" },
+        data: rows.map((row) => row.leverage_score)
+      }
+    ] as SeriesOption[]
+  };
+}
+
 function buildFitYByXOption(run: FitYByXRun, showFit: boolean, showBand: boolean): EChartsOption {
   const result = run.outputs.fit_y_by_x;
   const series: SeriesOption[] = [
@@ -1281,6 +1300,7 @@ function FitModelReport({
   showAnova,
   showParameters,
   showEffects,
+  showEffectLeverage,
   showAicc,
   showResiduals,
   diagnosticMode,
@@ -1292,6 +1312,7 @@ function FitModelReport({
   showAnova: boolean;
   showParameters: boolean;
   showEffects: boolean;
+  showEffectLeverage: boolean;
   showAicc: boolean;
   showResiduals: boolean;
   diagnosticMode: "residual" | "actual";
@@ -1299,6 +1320,8 @@ function FitModelReport({
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
+  const effectHostRef = useRef<HTMLDivElement>(null);
+  const effectChartRef = useRef<echarts.ECharts | null>(null);
 
   useEffect(() => {
     if (!hostRef.current || !run || !response) return;
@@ -1314,14 +1337,34 @@ function FitModelReport({
   }, [run, response]);
 
   useEffect(() => {
+    if (!effectHostRef.current || !run || !response || !showEffectLeverage) return;
+    if (effectChartRef.current) effectChartRef.current.dispose();
+    effectChartRef.current = echarts.init(effectHostRef.current);
+    const resize = () => effectChartRef.current?.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      effectChartRef.current?.dispose();
+      effectChartRef.current = null;
+    };
+  }, [run, response, showEffectLeverage]);
+
+  useEffect(() => {
     if (!chartRef.current || !run || !response) return;
     chartRef.current.setOption(buildFitDiagnosticOption(run, response, diagnosticMode), true);
   }, [diagnosticMode, response, run]);
+
+  useEffect(() => {
+    if (!effectChartRef.current || !run || !response || !showEffectLeverage) return;
+    effectChartRef.current.setOption(buildEffectLeverageOption(run, response), true);
+  }, [response, run, showEffectLeverage]);
 
   if (!run || !response) return null;
 
   const metrics = run.metrics[response];
   const criteria = run.information_criteria[response];
+  const formula = run.prediction_formulas[response];
+  const effectLeverageRows = run.effect_leverage[response] ?? [];
   const residualRows = run.residuals[response] ?? [];
   return (
     <section className="fit-model-diagnostics">
@@ -1339,6 +1382,8 @@ function FitModelReport({
           <span>Terms <strong>{metrics.terms.toFixed(0)}</strong></span>
         </div>
       ) : null}
+
+      {formula ? <pre className="fit-formula">{formula}</pre> : null}
 
       {showAicc ? (
         <div className="residual-table">
@@ -1409,6 +1454,27 @@ function FitModelReport({
             </tbody>
           </table>
         </div>
+      ) : null}
+
+      {showEffectLeverage ? (
+        <>
+          <div ref={effectHostRef} className="fit-y-chart" />
+          <div className="residual-table">
+            <table>
+              <thead><tr><th>Effect</th><th>Leverage Score</th><th>F Ratio</th><th>Prob &gt; F</th></tr></thead>
+              <tbody>
+                {effectLeverageRows.map((row) => (
+                  <tr key={row.effect}>
+                    <td>{row.effect}</td>
+                    <td>{row.leverage_score.toFixed(6)}</td>
+                    <td>{row.f_ratio === null ? "" : row.f_ratio.toFixed(6)}</td>
+                    <td>{row.p_value === null ? "" : row.p_value.toFixed(6)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : null}
 
       {showResiduals ? (
@@ -1549,6 +1615,7 @@ export default function App() {
   const [showFitModelAnova, setShowFitModelAnova] = useState(true);
   const [showFitModelParameters, setShowFitModelParameters] = useState(true);
   const [showFitModelEffects, setShowFitModelEffects] = useState(false);
+  const [showFitModelEffectLeverage, setShowFitModelEffectLeverage] = useState(false);
   const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
@@ -1864,11 +1931,11 @@ export default function App() {
 
   async function handleSaveFitDiagnostics() {
     if (!fitRun) return;
-    const updatedPreview = await saveFitModelDiagnostics(fitRun.id);
+    const updatedPreview = await saveFitModelDiagnostics(fitRun.id, true);
     setPreview(updatedPreview);
     setDatasets(await listDatasets());
     setFitModelMenuOpen(false);
-    setStatus(`Saved predicted values, residuals, leverage, and Cook's D for ${fitRun.responses.join(", ")}.`);
+    setStatus(`Saved prediction formulas, predicted values, residuals, leverage, and Cook's D for ${fitRun.responses.join(", ")}.`);
   }
 
   async function handleDistribution() {
@@ -2201,6 +2268,7 @@ export default function App() {
                         <button onClick={() => setShowFitModelAnova((show) => !show)}>{showFitModelAnova ? "Hide ANOVA" : "ANOVA"}</button>
                         <button onClick={() => setShowFitModelParameters((show) => !show)}>{showFitModelParameters ? "Hide Parameter Estimates" : "Parameter Estimates"}</button>
                         <button onClick={() => setShowFitModelEffects((show) => !show)}>{showFitModelEffects ? "Hide Effect Tests" : "Effect Tests"}</button>
+                        <button onClick={() => setShowFitModelEffectLeverage((show) => !show)}>{showFitModelEffectLeverage ? "Hide Effect Leverage" : "Effect Leverage"}</button>
                         <button onClick={() => setShowFitModelAicc((show) => !show)}>{showFitModelAicc ? "Hide AICc" : "AICc"}</button>
                         <button disabled>Lack of Fit</button>
                         <div className="red-menu-section">Profilers</div>
@@ -2212,7 +2280,7 @@ export default function App() {
                         <button onClick={() => { setShowFitModelResiduals(true); setFitModelDiagnosticMode("actual"); }}>Predicted by Actual</button>
                         <button onClick={() => { setShowFitModelResiduals(true); setFitModelDiagnosticMode("residual"); }}>Predicted by Residual</button>
                         <div className="red-menu-section">Save Columns</div>
-                        <button onClick={handleSaveFitDiagnostics}>Save Diagnostic Columns</button>
+                        <button onClick={handleSaveFitDiagnostics}>Save Prediction Formula and Diagnostics</button>
                       </div>
                     ) : null}
                   </div>
@@ -2262,6 +2330,7 @@ export default function App() {
                   showAnova={showFitModelAnova}
                   showParameters={showFitModelParameters}
                   showEffects={showFitModelEffects}
+                  showEffectLeverage={showFitModelEffectLeverage}
                   showAicc={showFitModelAicc}
                   showResiduals={showFitModelResiduals}
                   diagnosticMode={fitModelDiagnosticMode}

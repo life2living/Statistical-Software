@@ -1052,6 +1052,11 @@ input {
   color: #0f172a;
 }
 
+.fit-formula {
+  margin: 0 10px 10px;
+  max-height: 72px;
+}
+
 .fit-model-diagnostics .fit-y-chart {
   height: 300px;
 }
