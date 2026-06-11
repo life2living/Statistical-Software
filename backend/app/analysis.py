@@ -79,6 +79,79 @@ def spc_control_limits(rows: list[dict[str, Any]], column: str) -> dict[str, Any
     return {"center": center, "ucl": ucl, "lcl": lcl, "violations": violations}
 
 
+def control_chart_imr(
+    rows: list[dict[str, Any]],
+    y_column: str,
+    x_column: str | None = None,
+    phase_column: str | None = None,
+) -> dict[str, Any]:
+    observations: list[dict[str, Any]] = []
+    missing = 0
+    for row_index, row in enumerate(rows):
+        value = row.get(y_column)
+        if not is_numeric(value):
+            missing += 1
+            continue
+        observations.append(
+            {
+                "rowIndex": row_index,
+                "label": str(row.get(x_column) if x_column else len(observations) + 1),
+                "phase": str(row.get(phase_column) if phase_column and row.get(phase_column) is not None else "All"),
+                "value": float(value),
+            }
+        )
+
+    if not observations:
+        raise ValueError("Control Chart Builder requires at least one numeric Y value.")
+
+    values = [item["value"] for item in observations]
+    moving_ranges = [abs(values[index] - values[index - 1]) for index in range(1, len(values))]
+    center = mean(values)
+    mr_bar = mean(moving_ranges) if moving_ranges else 0.0
+    # I-MR limits use the public NIST moving-range estimator with d2=1.128 for ranges of 2.
+    sigma = mr_bar / 1.128 if mr_bar > 0 else 0.0
+    i_ucl = center + 3 * sigma
+    i_lcl = center - 3 * sigma
+    mr_ucl = 3.267 * mr_bar
+    mr_lcl = 0.0
+
+    points = [
+        {**item, "beyondLimits": item["value"] > i_ucl or item["value"] < i_lcl}
+        for item in observations
+    ]
+    mr_points = [
+        {
+            "rowIndex": observations[index]["rowIndex"],
+            "label": observations[index]["label"],
+            "phase": observations[index]["phase"],
+            "value": moving_ranges[index - 1],
+            "beyondLimits": moving_ranges[index - 1] > mr_ucl,
+        }
+        for index in range(1, len(observations))
+    ]
+    violations = [
+        {"chart": "I", "rule": "Beyond 3-sigma limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
+        for point in points
+        if point["beyondLimits"]
+    ] + [
+        {"chart": "MR", "rule": "Moving range above UCL", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
+        for point in mr_points
+        if point["beyondLimits"]
+    ]
+
+    return {
+        "chart_type": "imr",
+        "y": y_column,
+        "x": x_column,
+        "phase": phase_column,
+        "n": float(len(points)),
+        "missing": float(missing),
+        "individuals": {"center": center, "ucl": i_ucl, "lcl": i_lcl, "points": points},
+        "moving_range": {"center": mr_bar, "ucl": mr_ucl, "lcl": mr_lcl, "points": mr_points},
+        "violations": violations,
+    }
+
+
 def process_capability(rows: list[dict[str, Any]], column: str, lsl: float | None, usl: float | None, target: float | None = None) -> dict[str, Any]:
     values = numeric_values(rows, column)
     if len(values) < 2:

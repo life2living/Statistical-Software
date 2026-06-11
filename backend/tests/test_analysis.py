@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits
+from app.analysis import control_chart_imr, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits
 
 
 ROWS = [
@@ -27,6 +27,24 @@ def test_spc_returns_limits() -> None:
     result = spc_control_limits(ROWS, "x")
     assert result["ucl"] > result["center"]
     assert result["lcl"] < result["center"]
+
+
+def test_control_chart_imr_returns_individual_and_moving_range_limits() -> None:
+    rows = [{"time": "t1", "x": 10.0}, {"time": "t2", "x": 11.0}, {"time": "t3", "x": 9.0}, {"time": "t4", "x": 10.0}]
+    result = control_chart_imr(rows, "x", x_column="time")
+
+    assert result["n"] == 4.0
+    assert result["missing"] == 0.0
+    assert round(result["individuals"]["center"], 6) == 10.0
+    assert round(result["moving_range"]["center"], 6) == 1.333333
+    assert len(result["moving_range"]["points"]) == 3
+
+
+def test_control_chart_imr_flags_beyond_limits() -> None:
+    rows = [{"x": value} for value in [10.0, 10.1, 9.9, 10.0, 25.0]]
+    result = control_chart_imr(rows, "x")
+
+    assert any(violation["chart"] == "MR" for violation in result["violations"])
 
 
 def test_process_capability() -> None:

@@ -20,7 +20,8 @@
 - [x] Oneway ANOVA for continuous Y and categorical X.
 - [x] Multivariate correlations with p-value and covariance displays.
 - [x] Process capability with spec limits and capability indices.
-- [ ] Control Chart Builder with I-MR, Xbar-R, P/NP/C/U charts, rules, and phase handling.
+- [x] Control Chart Builder I-MR first slice with Y, subgroup/time, phase roles, limits, and rule-violation table.
+- [ ] Control Chart Builder Xbar-R, P/NP/C/U charts, extended rules, and full phase-limit recomputation.
 - [ ] Fit Model ANOVA tables, term effects, residual diagnostics, and lack-of-fit.
 - [ ] Tabulate platform for grouped summary tables.
 - [ ] Pareto, Gauge R&R, Variability Chart, and measurement system analysis.

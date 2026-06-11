@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runMultivariate, runOneway, runProcessCapability, runSpc, saveChart } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ProcessCapabilityRun } from "./types";
+import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runMultivariate, runOneway, runProcessCapability, runSpc, saveChart } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ProcessCapabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -468,6 +468,64 @@ function buildMultivariateOption(run: MultivariateRun, showPValues: boolean, sho
         }
       }
     ]
+  };
+}
+
+function buildControlChartOption(run: ControlChartRun): EChartsOption {
+  const result = run.outputs.control_chart;
+  return {
+    animation: false,
+    tooltip: { trigger: "axis" },
+    legend: { top: 0 },
+    grid: [
+      { left: 70, right: 28, top: 46, height: "38%" },
+      { left: 70, right: 28, bottom: 50, height: "28%" }
+    ],
+    xAxis: [
+      { type: "category", data: result.individuals.points.map((point) => point.label), gridIndex: 0 },
+      { type: "category", data: result.moving_range.points.map((point) => point.label), gridIndex: 1 }
+    ],
+    yAxis: [
+      { type: "value", name: result.y, gridIndex: 0 },
+      { type: "value", name: "MR", gridIndex: 1 }
+    ],
+    dataZoom: [{ type: "inside", xAxisIndex: [0, 1] }, { type: "slider", xAxisIndex: [0, 1], height: 18, bottom: 16 }],
+    series: [
+      {
+        type: "line",
+        name: "Individuals",
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        data: result.individuals.points.map((point) => ({
+          value: point.value,
+          rowIndex: point.rowIndex,
+          itemStyle: point.beyondLimits ? { color: "#dc2626", borderColor: "#7f1d1d", borderWidth: 2 } : undefined,
+          symbolSize: point.beyondLimits ? 10 : 6
+        })),
+        markLine: { symbol: "none", data: [
+          { name: "UCL", yAxis: result.individuals.ucl, lineStyle: { color: "#dc2626" } },
+          { name: "CL", yAxis: result.individuals.center, lineStyle: { color: "#2563eb" } },
+          { name: "LCL", yAxis: result.individuals.lcl, lineStyle: { color: "#dc2626" } }
+        ] }
+      },
+      {
+        type: "line",
+        name: "Moving Range",
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: result.moving_range.points.map((point) => ({
+          value: point.value,
+          rowIndex: point.rowIndex,
+          itemStyle: point.beyondLimits ? { color: "#dc2626", borderColor: "#7f1d1d", borderWidth: 2 } : undefined,
+          symbolSize: point.beyondLimits ? 10 : 6
+        })),
+        markLine: { symbol: "none", data: [
+          { name: "UCL", yAxis: result.moving_range.ucl, lineStyle: { color: "#dc2626" } },
+          { name: "MR", yAxis: result.moving_range.center, lineStyle: { color: "#2563eb" } },
+          { name: "LCL", yAxis: result.moving_range.lcl, lineStyle: { color: "#dc2626" } }
+        ] }
+      }
+    ] as SeriesOption[]
   };
 }
 
@@ -1091,6 +1149,96 @@ function MultivariateReport({
   );
 }
 
+function ControlChartReport({
+  run,
+  menuOpen,
+  showViolations,
+  onToggleMenu,
+  onToggleViolations
+}: {
+  run: ControlChartRun | null;
+  menuOpen: boolean;
+  showViolations: boolean;
+  onToggleMenu: () => void;
+  onToggleViolations: () => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!hostRef.current || !run) return;
+    if (chartRef.current) chartRef.current.dispose();
+    chartRef.current = echarts.init(hostRef.current);
+    const resize = () => chartRef.current?.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chartRef.current?.dispose();
+      chartRef.current = null;
+    };
+  }, [run]);
+
+  useEffect(() => {
+    if (!chartRef.current || !run) return;
+    chartRef.current.setOption(buildControlChartOption(run), true);
+  }, [run]);
+
+  if (!run) {
+    return (
+      <section className="fit-y-report-window">
+        <p>Assign a numeric Y column, then click Run.</p>
+      </section>
+    );
+  }
+
+  const result = run.outputs.control_chart;
+  return (
+    <section className="fit-y-report-window">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Control chart options">
+            ▶
+          </button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onToggleViolations}>{showViolations ? "Hide Rule Violations" : "Show Rule Violations"}</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>I-MR Chart of {result.y}</h3>
+        <span>{result.n.toFixed(0)} points, {result.missing.toFixed(0)} missing</span>
+      </div>
+      <div ref={hostRef} className="fit-y-chart control-chart-builder" />
+      <div className="fit-y-stats">
+        <span>I CL {result.individuals.center.toFixed(6)}</span>
+        <span>I UCL {result.individuals.ucl.toFixed(6)}</span>
+        <span>I LCL {result.individuals.lcl.toFixed(6)}</span>
+        <span>MR UCL {result.moving_range.ucl.toFixed(6)}</span>
+      </div>
+      {showViolations ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Chart</th><th>Rule</th><th>Label</th><th>Value</th><th>Row</th></tr></thead>
+            <tbody>
+              {result.violations.length === 0 ? (
+                <tr><td colSpan={5}>No displayed rule violations.</td></tr>
+              ) : result.violations.map((violation) => (
+                <tr key={`${violation.chart}-${violation.rowIndex}`}>
+                  <td>{violation.chart}</td>
+                  <td>{violation.rule}</td>
+                  <td>{violation.label}</td>
+                  <td>{violation.value.toFixed(6)}</td>
+                  <td>{violation.rowIndex + 1}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function CapabilityReport({
   run,
   menuOpen,
@@ -1192,7 +1340,7 @@ export default function App() {
   const [fitRun, setFitRun] = useState<FitModelRun | null>(null);
   const [activeProfileResponse, setActiveProfileResponse] = useState("");
   const [profilerValues, setProfilerValues] = useState<Record<string, number>>({});
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "capability">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -1225,6 +1373,12 @@ export default function App() {
   const [showMultivariatePValues, setShowMultivariatePValues] = useState(false);
   const [showMultivariateCovariance, setShowMultivariateCovariance] = useState(false);
   const [showMultivariateSummary, setShowMultivariateSummary] = useState(false);
+  const [controlChartY, setControlChartY] = useState<string | null>(null);
+  const [controlChartX, setControlChartX] = useState<string | null>(null);
+  const [controlChartPhase, setControlChartPhase] = useState<string | null>(null);
+  const [controlChartRun, setControlChartRun] = useState<ControlChartRun | null>(null);
+  const [controlChartMenuOpen, setControlChartMenuOpen] = useState(false);
+  const [showControlChartViolations, setShowControlChartViolations] = useState(true);
   const [capabilityY, setCapabilityY] = useState<string | null>(null);
   const [capabilityLsl, setCapabilityLsl] = useState("95");
   const [capabilityTarget, setCapabilityTarget] = useState("98");
@@ -1265,6 +1419,11 @@ export default function App() {
     setMultivariateY([]);
     setMultivariateRun(null);
     setMultivariateMenuOpen(false);
+    setControlChartY(null);
+    setControlChartX(null);
+    setControlChartPhase(null);
+    setControlChartRun(null);
+    setControlChartMenuOpen(false);
     setCapabilityY(null);
     setCapabilityRun(null);
     setCapabilityMenuOpen(false);
@@ -1384,6 +1543,11 @@ export default function App() {
     setMultivariateY([]);
     setMultivariateRun(null);
     setMultivariateMenuOpen(false);
+    setControlChartY(null);
+    setControlChartX(null);
+    setControlChartPhase(null);
+    setControlChartRun(null);
+    setControlChartMenuOpen(false);
     setCapabilityY(null);
     setCapabilityRun(null);
     setCapabilityMenuOpen(false);
@@ -1565,6 +1729,31 @@ export default function App() {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+  async function handleControlChart() {
+    if (!preview || !controlChartY) {
+      setStatus("Control Chart Builder requires one numeric Y column.");
+      return;
+    }
+    const result = await runControlChart(preview.dataset.id, controlChartY, {
+      x: controlChartX,
+      phase: controlChartPhase
+    });
+    setControlChartRun(result);
+    setControlChartMenuOpen(true);
+    setStatus(`Control Chart ${result.id}: I-MR chart of ${controlChartY}.`);
+  }
+
+  function openControlChartPlatform() {
+    if (!controlChartY) {
+      setControlChartY(zones.y.find((field) => numericColumns.includes(field)) ?? numericColumns[0] ?? null);
+    }
+    if (!controlChartX) {
+      setControlChartX(preview?.dataset.timestamp_column ?? zones.x[0] ?? null);
+    }
+    setActiveAnalyzePlatform("controlChart");
+    setAnalyzeMenuOpen(false);
+  }
+
   async function handleCapability() {
     if (!preview || !capabilityY) {
       setStatus("Process Capability requires one numeric process column.");
@@ -1646,7 +1835,7 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
@@ -1662,14 +1851,15 @@ export default function App() {
                 <button onClick={openMultivariatePlatform}>Multivariate Methods</button>
                 <button>Predictive Modeling</button>
                 <button>Specialized Modeling</button>
-                <button>Quality and Process</button>
+                <button onClick={openControlChartPlatform}>Control Chart Builder</button>
+                <button onClick={openCapabilityPlatform}>Process Capability</button>
               </div>
             ) : null}
           </div>
           <button className={activeAnalyzePlatform === "graph" ? "menu-button active" : "menu-button"} onClick={() => setActiveAnalyzePlatform("graph")}>
             Graph
           </button>
-          <button className={activeAnalyzePlatform === "capability" ? "menu-button active" : "menu-button"} onClick={openCapabilityPlatform}>
+          <button className={activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={openControlChartPlatform}>
             SPC
           </button>
           <span>Help</span>
@@ -1677,7 +1867,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
         <span>{status}</span>
       </section>
 
@@ -2040,6 +2230,73 @@ export default function App() {
               onToggleResiduals={() => setShowFitYResiduals((show) => !show)}
             />
           )}
+        </section>
+      ) : activeAnalyzePlatform === "controlChart" ? (
+        <section className="capability-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Control Chart Builder</h3>
+              <DistributionRoleDrop
+                label="Y"
+                values={controlChartY ? [controlChartY] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setControlChartY(field)}
+                onRemove={() => setControlChartY(null)}
+              />
+              <DistributionRoleDrop
+                label="Subgroup / Time"
+                values={controlChartX ? [controlChartX] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setControlChartX(field)}
+                onRemove={() => setControlChartX(null)}
+              />
+              <DistributionRoleDrop
+                label="Phase"
+                values={controlChartPhase ? [controlChartPhase] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setControlChartPhase(field)}
+                onRemove={() => setControlChartPhase(null)}
+              />
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleControlChart}>Run</button>
+            <button onClick={() => {
+              setControlChartY(null);
+              setControlChartX(null);
+              setControlChartPhase(null);
+              setControlChartRun(null);
+            }}>
+              Remove
+            </button>
+            <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
+          </aside>
+
+          <ControlChartReport
+            run={controlChartRun}
+            menuOpen={controlChartMenuOpen}
+            showViolations={showControlChartViolations}
+            onToggleMenu={() => setControlChartMenuOpen((open) => !open)}
+            onToggleViolations={() => setShowControlChartViolations((show) => !show)}
+          />
         </section>
       ) : activeAnalyzePlatform === "capability" ? (
         <section className="capability-platform">

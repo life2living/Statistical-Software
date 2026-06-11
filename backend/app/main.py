@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits
+from .analysis import control_chart_imr, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
@@ -189,6 +189,17 @@ def run_analysis(request: AnalysisRequest) -> AnalysisRun:
         result = spc_control_limits(rows, column)
         outputs = {"spc": result}
         interpretation = [f"Found {len(result['violations'])} points outside 3-sigma control limits for {column}."]
+    elif request.method == "control_chart":
+        if not request.columns:
+            raise HTTPException(status_code=400, detail="Control Chart Builder requires a Y column")
+        result = control_chart_imr(
+            rows,
+            y_column=request.columns[0],
+            x_column=request.parameters.get("x"),
+            phase_column=request.parameters.get("phase"),
+        )
+        outputs = {"control_chart": result}
+        interpretation = [f"Built I-MR control chart for {result['y']} with {len(result['violations'])} rule violations."]
     elif request.method == "process_capability":
         column = request.columns[0] if request.columns else "quality_score"
         lsl = float(request.parameters["lsl"]) if request.parameters.get("lsl") not in {None, ""} else None
