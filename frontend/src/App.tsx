@@ -1,7 +1,7 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runMultivariate, runOneway, runProcessCapability, runSpc, saveChart } from "./api";
+import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runMultivariate, runOneway, runProcessCapability, runSpc, saveChart, saveFitModelDiagnostics } from "./api";
 import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ProcessCapabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
@@ -1277,32 +1277,24 @@ function ControlChartReport({
 function FitModelReport({
   run,
   response,
-  menuOpen,
+  showSummary,
   showAnova,
   showParameters,
   showEffects,
+  showAicc,
   showResiduals,
   diagnosticMode,
-  onToggleMenu,
-  onToggleAnova,
-  onToggleParameters,
-  onToggleEffects,
-  onToggleResiduals,
   onSetDiagnosticMode
 }: {
   run: FitModelRun | null;
   response: string;
-  menuOpen: boolean;
+  showSummary: boolean;
   showAnova: boolean;
   showParameters: boolean;
   showEffects: boolean;
+  showAicc: boolean;
   showResiduals: boolean;
   diagnosticMode: "residual" | "actual";
-  onToggleMenu: () => void;
-  onToggleAnova: () => void;
-  onToggleParameters: () => void;
-  onToggleEffects: () => void;
-  onToggleResiduals: () => void;
   onSetDiagnosticMode: (mode: "residual" | "actual") => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -1329,28 +1321,37 @@ function FitModelReport({
   if (!run || !response) return null;
 
   const metrics = run.metrics[response];
+  const criteria = run.information_criteria[response];
   const residualRows = run.residuals[response] ?? [];
   return (
     <section className="fit-model-diagnostics">
       <div className="distribution-card-header">
-        <div className="red-menu">
-          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Fit Model options">
-            ▶
-          </button>
-          {menuOpen ? (
-            <div className="red-menu-popover">
-              <button onClick={onToggleAnova}>{showAnova ? "Hide ANOVA" : "ANOVA"}</button>
-              <button onClick={onToggleParameters}>{showParameters ? "Hide Parameter Estimates" : "Parameter Estimates"}</button>
-              <button onClick={onToggleEffects}>{showEffects ? "Hide Effect Tests" : "Effect Tests"}</button>
-              <button onClick={onToggleResiduals}>{showResiduals ? "Hide Residual Plot" : "Residual Plot"}</button>
-              <button onClick={() => onSetDiagnosticMode("actual")}>Predicted by Actual</button>
-              <button onClick={() => onSetDiagnosticMode("residual")}>Predicted by Residual</button>
-            </div>
-          ) : null}
-        </div>
         <h3>Response {response}</h3>
         <span>R2 {metrics?.r2.toFixed(6)} · RMSE {metrics?.rmse.toFixed(6)}</span>
       </div>
+
+      {showSummary ? (
+        <div className="fit-summary-grid">
+          <span>RSquare <strong>{metrics.r2.toFixed(6)}</strong></span>
+          <span>Adj RSquare <strong>{metrics.adj_r2.toFixed(6)}</strong></span>
+          <span>Root Mean Square Error <strong>{metrics.rmse.toFixed(6)}</strong></span>
+          <span>Observations <strong>{metrics.n.toFixed(0)}</strong></span>
+          <span>Terms <strong>{metrics.terms.toFixed(0)}</strong></span>
+        </div>
+      ) : null}
+
+      {showAicc ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Criterion</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td>AICc</td><td>{criteria.aicc.toFixed(6)}</td></tr>
+              <tr><td>AIC</td><td>{criteria.aic.toFixed(6)}</td></tr>
+              <tr><td>BIC</td><td>{criteria.bic.toFixed(6)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      ) : null}
 
       {showAnova ? (
         <div className="residual-table">
@@ -1412,6 +1413,10 @@ function FitModelReport({
 
       {showResiduals ? (
         <>
+          <div className="fit-diagnostic-toolbar">
+            <button className={diagnosticMode === "residual" ? "active" : ""} onClick={() => onSetDiagnosticMode("residual")}>Predicted by Residual</button>
+            <button className={diagnosticMode === "actual" ? "active" : ""} onClick={() => onSetDiagnosticMode("actual")}>Predicted by Actual</button>
+          </div>
           <div ref={hostRef} className="fit-y-chart" />
           <div className="residual-table">
             <table>
@@ -1539,9 +1544,12 @@ export default function App() {
   const [activeProfileResponse, setActiveProfileResponse] = useState("");
   const [profilerValues, setProfilerValues] = useState<Record<string, number>>({});
   const [fitModelMenuOpen, setFitModelMenuOpen] = useState(false);
+  const [showFitModelSummary, setShowFitModelSummary] = useState(true);
+  const [showFitModelProfiler, setShowFitModelProfiler] = useState(true);
   const [showFitModelAnova, setShowFitModelAnova] = useState(true);
   const [showFitModelParameters, setShowFitModelParameters] = useState(true);
   const [showFitModelEffects, setShowFitModelEffects] = useState(false);
+  const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
   const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability">("graph");
@@ -1607,9 +1615,12 @@ export default function App() {
     setProfilerValues({});
     setActiveProfileResponse("");
     setFitModelMenuOpen(false);
+    setShowFitModelSummary(true);
+    setShowFitModelProfiler(true);
     setShowFitModelAnova(true);
     setShowFitModelParameters(true);
     setShowFitModelEffects(false);
+    setShowFitModelAicc(false);
     setShowFitModelResiduals(true);
     setFitModelDiagnosticMode("residual");
     setSelectedRows(new Set());
@@ -1671,6 +1682,7 @@ export default function App() {
 
   useEffect(() => {
     if (activeAnalyzePlatform !== "fitModel") return;
+    if (!showFitModelProfiler) return;
     if (!profilerRef.current) return;
     profilerInstance.current = echarts.init(profilerRef.current);
     const resize = () => profilerInstance.current?.resize();
@@ -1680,7 +1692,7 @@ export default function App() {
       profilerInstance.current?.dispose();
       profilerInstance.current = null;
     };
-  }, [activeAnalyzePlatform, fitRun]);
+  }, [activeAnalyzePlatform, fitRun, showFitModelProfiler]);
 
   const columns = preview?.dataset.columns ?? [];
   const numericColumns = useMemo(() => columns.filter((column) => column.type === "numeric").map((column) => column.name), [columns]);
@@ -1848,6 +1860,15 @@ export default function App() {
     setProfilerValues(defaults);
     setFitModelMenuOpen(true);
     setStatus(`Fit Model ${result.id}: ${responses.join(", ")} by ${effects.join(", ")}.`);
+  }
+
+  async function handleSaveFitDiagnostics() {
+    if (!fitRun) return;
+    const updatedPreview = await saveFitModelDiagnostics(fitRun.id);
+    setPreview(updatedPreview);
+    setDatasets(await listDatasets());
+    setFitModelMenuOpen(false);
+    setStatus(`Saved predicted values, residuals, leverage, and Cook's D for ${fitRun.responses.join(", ")}.`);
   }
 
   async function handleDistribution() {
@@ -2167,7 +2188,37 @@ export default function App() {
 
           <section className="fit-report-window">
             <div className="profiler-header">
-              <h3>Prediction Profiler</h3>
+              <div className="profiler-title">
+                {fitRun ? (
+                  <div className="red-menu">
+                    <button className={fitModelMenuOpen ? "red-triangle active" : "red-triangle"} onClick={() => setFitModelMenuOpen((open) => !open)} title="Fit Model report options">
+                      ▶
+                    </button>
+                    {fitModelMenuOpen ? (
+                      <div className="red-menu-popover red-menu-wide">
+                        <div className="red-menu-section">Display</div>
+                        <button onClick={() => setShowFitModelSummary((show) => !show)}>{showFitModelSummary ? "Hide Fit Summary" : "Fit Summary"}</button>
+                        <button onClick={() => setShowFitModelAnova((show) => !show)}>{showFitModelAnova ? "Hide ANOVA" : "ANOVA"}</button>
+                        <button onClick={() => setShowFitModelParameters((show) => !show)}>{showFitModelParameters ? "Hide Parameter Estimates" : "Parameter Estimates"}</button>
+                        <button onClick={() => setShowFitModelEffects((show) => !show)}>{showFitModelEffects ? "Hide Effect Tests" : "Effect Tests"}</button>
+                        <button onClick={() => setShowFitModelAicc((show) => !show)}>{showFitModelAicc ? "Hide AICc" : "AICc"}</button>
+                        <button disabled>Lack of Fit</button>
+                        <div className="red-menu-section">Profilers</div>
+                        <button onClick={() => setShowFitModelProfiler((show) => !show)}>{showFitModelProfiler ? "Hide Factor Profiler" : "Factor Profiler"}</button>
+                        <button disabled>Contour Profiler</button>
+                        <button disabled>Surface Profiler</button>
+                        <div className="red-menu-section">Row Diagnostics</div>
+                        <button onClick={() => setShowFitModelResiduals((show) => !show)}>{showFitModelResiduals ? "Hide Residual Plot" : "Predicted by Residual"}</button>
+                        <button onClick={() => { setShowFitModelResiduals(true); setFitModelDiagnosticMode("actual"); }}>Predicted by Actual</button>
+                        <button onClick={() => { setShowFitModelResiduals(true); setFitModelDiagnosticMode("residual"); }}>Predicted by Residual</button>
+                        <div className="red-menu-section">Save Columns</div>
+                        <button onClick={handleSaveFitDiagnostics}>Save Diagnostic Columns</button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <h3>Prediction Profiler</h3>
+              </div>
               {fitRun ? (
                 <select value={profileResponse} onChange={(event) => setActiveProfileResponse(event.target.value)}>
                   {fitRun.responses.map((response) => (
@@ -2178,42 +2229,42 @@ export default function App() {
             </div>
             {fitRun ? (
               <>
-                <div className="profiler-metrics">
-                  <span>R2 {fitRun.metrics[profileResponse]?.r2.toFixed(3)}</span>
-                  <span>Adj R2 {fitRun.metrics[profileResponse]?.adj_r2.toFixed(3)}</span>
-                  <span>RMSE {fitRun.metrics[profileResponse]?.rmse.toFixed(3)}</span>
-                  <strong>Prediction {profilePrediction?.toFixed(3)}</strong>
-                </div>
-                <div className="profiler-controls">
-                  {fitRun.profiler_effects.map((effect) => (
-                    <label key={effect.name}>
-                      <span>{effect.name}: {(profilerValues[effect.name] ?? effect.mean).toFixed(3)}</span>
-                      <input
-                        type="range"
-                        min={effect.min}
-                        max={effect.max}
-                        step={(effect.max - effect.min) / 100 || 1}
-                        value={profilerValues[effect.name] ?? effect.mean}
-                        onChange={(event) => setProfilerValues((current) => ({ ...current, [effect.name]: Number(event.target.value) }))}
-                      />
-                    </label>
-                  ))}
-                </div>
-                <div ref={profilerRef} className="profiler-chart" />
+                {showFitModelProfiler ? (
+                  <>
+                    <div className="profiler-metrics">
+                      <span>R2 {fitRun.metrics[profileResponse]?.r2.toFixed(3)}</span>
+                      <span>Adj R2 {fitRun.metrics[profileResponse]?.adj_r2.toFixed(3)}</span>
+                      <span>RMSE {fitRun.metrics[profileResponse]?.rmse.toFixed(3)}</span>
+                      <strong>Prediction {profilePrediction?.toFixed(3)}</strong>
+                    </div>
+                    <div className="profiler-controls">
+                      {fitRun.profiler_effects.map((effect) => (
+                        <label key={effect.name}>
+                          <span>{effect.name}: {(profilerValues[effect.name] ?? effect.mean).toFixed(3)}</span>
+                          <input
+                            type="range"
+                            min={effect.min}
+                            max={effect.max}
+                            step={(effect.max - effect.min) / 100 || 1}
+                            value={profilerValues[effect.name] ?? effect.mean}
+                            onChange={(event) => setProfilerValues((current) => ({ ...current, [effect.name]: Number(event.target.value) }))}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div ref={profilerRef} className="profiler-chart" />
+                  </>
+                ) : null}
                 <FitModelReport
                   run={fitRun}
                   response={profileResponse}
-                  menuOpen={fitModelMenuOpen}
+                  showSummary={showFitModelSummary}
                   showAnova={showFitModelAnova}
                   showParameters={showFitModelParameters}
                   showEffects={showFitModelEffects}
+                  showAicc={showFitModelAicc}
                   showResiduals={showFitModelResiduals}
                   diagnosticMode={fitModelDiagnosticMode}
-                  onToggleMenu={() => setFitModelMenuOpen((open) => !open)}
-                  onToggleAnova={() => setShowFitModelAnova((show) => !show)}
-                  onToggleParameters={() => setShowFitModelParameters((show) => !show)}
-                  onToggleEffects={() => setShowFitModelEffects((show) => !show)}
-                  onToggleResiduals={() => setShowFitModelResiduals((show) => !show)}
                   onSetDiagnosticMode={setFitModelDiagnosticMode}
                 />
               </>

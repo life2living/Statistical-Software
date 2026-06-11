@@ -262,7 +262,8 @@ export interface FitModelRun {
   anova: Record<string, { source: string; df: number; sum_squares: number; mean_square: number | null; f_ratio: number | null; p_value: number | null }[]>;
   parameter_estimates: Record<string, { term: string; estimate: number; stderr: number; t_ratio: number | null; p_value: number | null }[]>;
   effect_tests: Record<string, { effect: string; df: number; sum_squares: number; f_ratio: number | null; p_value: number | null }[]>;
-  residuals: Record<string, { rowIndex: number; actual: number; predicted: number; residual: number; studentized: number; leverage: number; cook: number }[]>;
+  residuals: Record<string, { rowIndex: number; sourceRowIndex?: number; actual: number; predicted: number; residual: number; studentized: number; leverage: number; cook: number }[]>;
+  information_criteria: Record<string, { aic: number; aicc: number; bic: number }>;
   profiler_effects: ProfilerEffect[];
   profiler: Record<string, Record<string, { x: number; y: number }[]>>;
   status: "completed" | "failed";

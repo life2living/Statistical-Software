@@ -92,8 +92,17 @@ def test_fit_standard_least_squares_profiler() -> None:
     assert round(result["anova"]["y"][0]["sum_squares"], 6) == 20.0
     assert result["parameter_estimates"]["y"][1]["term"] == "x"
     assert round(result["parameter_estimates"]["y"][1]["estimate"], 6) == 2.0
+    assert result["information_criteria"]["y"]["aicc"] <= result["information_criteria"]["y"]["aic"] + 100
     assert len(result["residuals"]["y"]) == 4
     assert result["residuals"]["y"][0]["cook"] >= 0
+
+
+def test_fit_standard_least_squares_keeps_source_row_index_with_missing_values() -> None:
+    rows = [{"x": 1.0, "y": 2.0}, {"x": None, "y": 3.0}, {"x": 2.0, "y": 4.0}, {"x": 3.0, "y": 6.0}]
+    result = fit_standard_least_squares(rows, responses=["y"], effects=["x"])
+
+    assert [row["sourceRowIndex"] for row in result["residuals"]["y"]] == [0.0, 2.0, 3.0]
+    assert result["metrics"]["y"]["n"] == 3.0
 
 
 def test_fit_standard_least_squares_reports_nonperfect_model_diagnostics() -> None:

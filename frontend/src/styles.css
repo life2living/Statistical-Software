@@ -670,6 +670,18 @@ input {
   z-index: 12;
 }
 
+.red-menu-wide {
+  min-width: 270px;
+}
+
+.red-menu-section {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 8px 12px 3px;
+  text-transform: uppercase;
+}
+
 .red-menu-popover button {
   background: transparent;
   border: 0;
@@ -963,6 +975,16 @@ input {
   justify-content: space-between;
 }
 
+.profiler-title {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.profiler-title h3 {
+  margin: 0;
+}
+
 .profiler-header select {
   max-width: 240px;
 }
@@ -1009,8 +1031,40 @@ input {
   margin-top: 12px;
 }
 
+.fit-summary-grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  padding: 10px;
+}
+
+.fit-summary-grid span {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  display: flex;
+  font-size: 12px;
+  justify-content: space-between;
+  padding: 6px 8px;
+}
+
+.fit-summary-grid strong {
+  color: #0f172a;
+}
+
 .fit-model-diagnostics .fit-y-chart {
   height: 300px;
+}
+
+.fit-diagnostic-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+
+.fit-diagnostic-toolbar button.active {
+  background: #fed7aa;
+  border-color: #fb923c;
 }
 
 .fit-model-diagnostics .residual-table {

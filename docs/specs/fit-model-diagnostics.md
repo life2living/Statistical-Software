@@ -10,6 +10,9 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
 - Preserve launch-dialog roles for Y and model effects with drag-and-drop role boxes.
 - Add a Fit Model red triangle menu to toggle ANOVA, parameter estimates, effect tests, and residual diagnostic views.
 - Render predicted-vs-residual and predicted-vs-actual diagnostic plots using ECharts.
+- Expand the top-left Fit Model red triangle menu with JMP-style report groups for display tables, profilers, row diagnostics, and saved columns.
+- Support Factor Profiler show/hide from the red triangle menu.
+- Save predicted values, residuals, studentized residuals, leverage, and Cook distance back into the active in-memory data table.
 
 ## Backend
 
@@ -18,13 +21,15 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
   - `parameter_estimates[response]`: estimate, standard error, t ratio, and two-sided t p-value.
   - `effect_tests[response]`: one-degree effect F tests for each non-intercept term.
   - `residuals[response]`: actual, predicted, raw residual, studentized residual, leverage, and Cook distance.
+  - `information_criteria[response]`: AIC, AICc, and BIC from Gaussian OLS log-likelihood.
+- `POST /fit-model/save-diagnostics` writes row diagnostics from a Fit Model run back to the source dataset and refreshes column profiles.
 - Math uses ordinary least squares normal equations. Probability calculations use SciPy survival functions for F and t distributions.
 - Missing rows are excluded per response/effect complete-case filtering.
 
 ## Frontend
 
 - The Fit Model output keeps the existing Prediction Profiler and appends a response-specific diagnostics panel.
-- The diagnostics panel uses the StatFlow red triangle menu pattern to show/hide tables and switch residual plot modes.
+- The top-left report red triangle menu uses grouped actions for Fit Summary, ANOVA, Parameter Estimates, Effect Tests, AICc, Factor Profiler, row diagnostic plots, and saved diagnostic columns.
 - Default launch behavior now chooses a numeric effect even when Graph Builder's X role contains a timestamp, so the sample dataset can run Fit Model immediately.
 
 ## Validation

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from math import sqrt
+from math import log, pi, sqrt
 from statistics import mean, median, stdev
 from typing import Any
 
@@ -655,11 +655,12 @@ def fit_standard_least_squares(
     if not effects:
         raise ValueError("At least one effect is required.")
 
-    model_rows = [
-        row
-        for row in rows
+    model_observations = [
+        {"row": row, "rowIndex": row_index}
+        for row_index, row in enumerate(rows)
         if all(isinstance(row.get(column), int | float) and not isinstance(row.get(column), bool) for column in [*responses, *effects])
     ]
+    model_rows = [observation["row"] for observation in model_observations]
     if len(model_rows) < max(3, len(effects) + 2):
         raise ValueError("Not enough complete numeric rows for the requested model.")
 
@@ -685,6 +686,7 @@ def fit_standard_least_squares(
     parameter_estimates: dict[str, list[dict[str, Any]]] = {}
     effect_tests: dict[str, list[dict[str, Any]]] = {}
     residual_diagnostics: dict[str, list[dict[str, float]]] = {}
+    information_criteria: dict[str, dict[str, float]] = {}
     profiler: dict[str, dict[str, list[dict[str, float]]]] = {}
     xtx = cross_product(design)
     inverse_xtx = invert_matrix([[value + (1e-9 if row == column else 0.0) for column, value in enumerate(values)] for row, values in enumerate(xtx)])
@@ -710,9 +712,15 @@ def fit_standard_least_squares(
         r2 = 0.0 if sst == 0 else 1 - sse / sst
         adj_r2 = 1 - (1 - r2) * (n - 1) / max(1, df_error)
         rmse = sqrt(mse) if mse > 0 else 0.0
+        # AIC family uses the public Gaussian OLS log-likelihood with MLE sigma^2 = SSE / n.
+        log_likelihood = -0.5 * n * (log(2 * pi) + 1 + log(max(sse / n, 1e-300)))
+        aic = 2 * p - 2 * log_likelihood
+        bic = p * log(n) - 2 * log_likelihood
+        aicc = aic + (2 * p * (p + 1) / (n - p - 1)) if n > p + 1 else aic
 
         coefficients[response] = {term: beta[index] for index, term in enumerate(terms)}
         metrics[response] = {"r2": r2, "adj_r2": adj_r2, "rmse": rmse, "n": float(n), "terms": float(p), "sse": sse, "sst": sst, "mse": mse}
+        information_criteria[response] = {"aic": aic, "aicc": aicc, "bic": bic}
         anova[response] = [
             {"source": "Model", "df": float(df_model), "sum_squares": ss_model, "mean_square": ms_model, "f_ratio": f_ratio, "p_value": f_p_value},
             {"source": "Error", "df": float(df_error), "sum_squares": sse, "mean_square": mse, "f_ratio": None, "p_value": None},
@@ -739,6 +747,7 @@ def fit_standard_least_squares(
             residual_diagnostics[response].append(
                 {
                     "rowIndex": float(index),
+                    "sourceRowIndex": float(model_observations[index]["rowIndex"]),
                     "actual": actual,
                     "predicted": estimate,
                     "residual": residual,
@@ -757,6 +766,7 @@ def fit_standard_least_squares(
         "parameter_estimates": parameter_estimates,
         "effect_tests": effect_tests,
         "residuals": residual_diagnostics,
+        "information_criteria": information_criteria,
         "profiler_effects": profiler_effects,
         "profiler": profiler,
     }

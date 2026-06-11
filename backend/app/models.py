@@ -131,6 +131,10 @@ class FitModelRequest(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
+class SaveFitDiagnosticsRequest(BaseModel):
+    run_id: str
+
+
 class ProfilerEffect(BaseModel):
     name: str
     min: float
@@ -153,6 +157,7 @@ class FitModelRun(BaseModel):
     parameter_estimates: dict[str, list[dict[str, Any]]]
     effect_tests: dict[str, list[dict[str, Any]]]
     residuals: dict[str, list[dict[str, float]]]
+    information_criteria: dict[str, dict[str, float]]
     profiler_effects: list[ProfilerEffect]
     profiler: dict[str, dict[str, list[dict[str, float]]]]
     status: Literal["completed", "failed"]

@@ -18,9 +18,10 @@ from .models import (
     Project,
     Report,
     ReportBlock,
+    SaveFitDiagnosticsRequest,
     SavedChart,
 )
-from .storage import new_id, now, store
+from .storage import infer_profiles, new_id, now, store
 
 
 app = FastAPI(title="Industrial Statistical Analytics API", version="0.1.0")
@@ -292,6 +293,7 @@ def run_fit_model(request: FitModelRequest) -> FitModelRun:
         parameter_estimates=result["parameter_estimates"],
         effect_tests=result["effect_tests"],
         residuals=result["residuals"],
+        information_criteria=result["information_criteria"],
         profiler_effects=result["profiler_effects"],
         profiler=result["profiler"],
         status="completed",
@@ -299,6 +301,38 @@ def run_fit_model(request: FitModelRequest) -> FitModelRun:
     )
     store.model_runs[run.id] = run
     return run
+
+
+@app.post("/fit-model/save-diagnostics", response_model=DatasetPreview)
+def save_fit_model_diagnostics(request: SaveFitDiagnosticsRequest) -> DatasetPreview:
+    run = store.model_runs.get(request.run_id)
+    if not run or not isinstance(run, FitModelRun):
+        raise HTTPException(status_code=404, detail="Fit Model run not found")
+
+    dataset = store.datasets.get(run.dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    rows = store.rows[dataset.id]
+    for response in run.responses:
+        columns = {
+            f"{response} Predicted": "predicted",
+            f"{response} Residual": "residual",
+            f"{response} Studentized Residual": "studentized",
+            f"{response} Leverage": "leverage",
+            f"{response} Cook's D": "cook",
+        }
+        for row in rows:
+            for column in columns:
+                row[column] = None
+        for diagnostic in run.residuals.get(response, []):
+            row_index = int(diagnostic.get("sourceRowIndex", diagnostic["rowIndex"]))
+            if 0 <= row_index < len(rows):
+                for column, key in columns.items():
+                    rows[row_index][column] = diagnostic[key]
+
+    dataset.version += 1
+    dataset.columns = infer_profiles(rows)
+    return DatasetPreview(dataset=dataset, rows=rows[:240])
 
 
 @app.post("/reports", response_model=Report)

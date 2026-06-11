@@ -157,3 +157,10 @@ export function runFitModel(datasetId: string, responses: string[], effects: str
     })
   });
 }
+
+export function saveFitModelDiagnostics(runId: string): Promise<DatasetPreview> {
+  return request<DatasetPreview>("/fit-model/save-diagnostics", {
+    method: "POST",
+    body: JSON.stringify({ run_id: runId })
+  });
+}
