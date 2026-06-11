@@ -88,6 +88,23 @@ def test_fit_standard_least_squares_profiler() -> None:
     assert round(result["coefficients"]["y"]["x"], 6) == 2.0
     assert round(result["metrics"]["y"]["r2"], 6) == 1.0
     assert len(result["profiler"]["y"]["x"]) == 25
+    assert result["anova"]["y"][0]["source"] == "Model"
+    assert round(result["anova"]["y"][0]["sum_squares"], 6) == 20.0
+    assert result["parameter_estimates"]["y"][1]["term"] == "x"
+    assert round(result["parameter_estimates"]["y"][1]["estimate"], 6) == 2.0
+    assert len(result["residuals"]["y"]) == 4
+    assert result["residuals"]["y"][0]["cook"] >= 0
+
+
+def test_fit_standard_least_squares_reports_nonperfect_model_diagnostics() -> None:
+    rows = [{"x": 1.0, "y": 1.0}, {"x": 2.0, "y": 2.5}, {"x": 3.0, "y": 2.7}, {"x": 4.0, "y": 4.8}]
+    result = fit_standard_least_squares(rows, responses=["y"], effects=["x"])
+
+    assert 0 < result["metrics"]["y"]["r2"] < 1
+    assert result["anova"]["y"][0]["f_ratio"] is not None
+    assert result["parameter_estimates"]["y"][1]["stderr"] > 0
+    assert result["effect_tests"]["y"][0]["effect"] == "x"
+    assert any(abs(row["residual"]) > 0 for row in result["residuals"]["y"])
 
 
 def test_distribution_skips_missing_values() -> None:

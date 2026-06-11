@@ -318,6 +318,41 @@ function buildProfilerOption(run: FitModelRun, response: string, values: Record<
   };
 }
 
+function buildFitDiagnosticOption(run: FitModelRun, response: string, mode: "residual" | "actual"): EChartsOption {
+  const rows = run.residuals[response] ?? [];
+  return {
+    animation: false,
+    tooltip: { trigger: "item" },
+    grid: { left: 64, right: 24, top: 28, bottom: 48 },
+    xAxis: { type: "value", name: "Predicted" },
+    yAxis: { type: "value", name: mode === "residual" ? "Residual" : "Actual" },
+    series: [
+      {
+        type: "scatter",
+        name: mode === "residual" ? "Residual" : "Actual",
+        symbolSize: 7,
+        data: rows.map((row) => [row.predicted, mode === "residual" ? row.residual : row.actual])
+      },
+      ...(mode === "residual" ? [{
+        type: "line" as const,
+        name: "Zero",
+        symbol: "none",
+        data: rows.length ? [[Math.min(...rows.map((row) => row.predicted)), 0], [Math.max(...rows.map((row) => row.predicted)), 0]] : [],
+        lineStyle: { color: "#2563eb", width: 1 }
+      }] : [{
+        type: "line" as const,
+        name: "Ideal",
+        symbol: "none",
+        data: rows.length ? [
+          [Math.min(...rows.map((row) => Math.min(row.predicted, row.actual))), Math.min(...rows.map((row) => Math.min(row.predicted, row.actual)))],
+          [Math.max(...rows.map((row) => Math.max(row.predicted, row.actual))), Math.max(...rows.map((row) => Math.max(row.predicted, row.actual)))]
+        ] : [],
+        lineStyle: { color: "#dc2626", width: 1 }
+      }])
+    ] as SeriesOption[]
+  };
+}
+
 function buildFitYByXOption(run: FitYByXRun, showFit: boolean, showBand: boolean): EChartsOption {
   const result = run.outputs.fit_y_by_x;
   const series: SeriesOption[] = [
@@ -1239,6 +1274,169 @@ function ControlChartReport({
   );
 }
 
+function FitModelReport({
+  run,
+  response,
+  menuOpen,
+  showAnova,
+  showParameters,
+  showEffects,
+  showResiduals,
+  diagnosticMode,
+  onToggleMenu,
+  onToggleAnova,
+  onToggleParameters,
+  onToggleEffects,
+  onToggleResiduals,
+  onSetDiagnosticMode
+}: {
+  run: FitModelRun | null;
+  response: string;
+  menuOpen: boolean;
+  showAnova: boolean;
+  showParameters: boolean;
+  showEffects: boolean;
+  showResiduals: boolean;
+  diagnosticMode: "residual" | "actual";
+  onToggleMenu: () => void;
+  onToggleAnova: () => void;
+  onToggleParameters: () => void;
+  onToggleEffects: () => void;
+  onToggleResiduals: () => void;
+  onSetDiagnosticMode: (mode: "residual" | "actual") => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!hostRef.current || !run || !response) return;
+    if (chartRef.current) chartRef.current.dispose();
+    chartRef.current = echarts.init(hostRef.current);
+    const resize = () => chartRef.current?.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chartRef.current?.dispose();
+      chartRef.current = null;
+    };
+  }, [run, response]);
+
+  useEffect(() => {
+    if (!chartRef.current || !run || !response) return;
+    chartRef.current.setOption(buildFitDiagnosticOption(run, response, diagnosticMode), true);
+  }, [diagnosticMode, response, run]);
+
+  if (!run || !response) return null;
+
+  const metrics = run.metrics[response];
+  const residualRows = run.residuals[response] ?? [];
+  return (
+    <section className="fit-model-diagnostics">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Fit Model options">
+            ▶
+          </button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onToggleAnova}>{showAnova ? "Hide ANOVA" : "ANOVA"}</button>
+              <button onClick={onToggleParameters}>{showParameters ? "Hide Parameter Estimates" : "Parameter Estimates"}</button>
+              <button onClick={onToggleEffects}>{showEffects ? "Hide Effect Tests" : "Effect Tests"}</button>
+              <button onClick={onToggleResiduals}>{showResiduals ? "Hide Residual Plot" : "Residual Plot"}</button>
+              <button onClick={() => onSetDiagnosticMode("actual")}>Predicted by Actual</button>
+              <button onClick={() => onSetDiagnosticMode("residual")}>Predicted by Residual</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>Response {response}</h3>
+        <span>R2 {metrics?.r2.toFixed(6)} · RMSE {metrics?.rmse.toFixed(6)}</span>
+      </div>
+
+      {showAnova ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Source</th><th>DF</th><th>SS</th><th>MS</th><th>F Ratio</th><th>Prob &gt; F</th></tr></thead>
+            <tbody>
+              {(run.anova[response] ?? []).map((row) => (
+                <tr key={row.source}>
+                  <td>{row.source}</td>
+                  <td>{row.df.toFixed(0)}</td>
+                  <td>{row.sum_squares.toFixed(6)}</td>
+                  <td>{row.mean_square === null ? "" : row.mean_square.toFixed(6)}</td>
+                  <td>{row.f_ratio === null ? "" : row.f_ratio.toFixed(6)}</td>
+                  <td>{row.p_value === null ? "" : row.p_value.toFixed(6)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {showParameters ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Term</th><th>Estimate</th><th>Std Error</th><th>t Ratio</th><th>Prob &gt; |t|</th></tr></thead>
+            <tbody>
+              {(run.parameter_estimates[response] ?? []).map((row) => (
+                <tr key={row.term}>
+                  <td>{row.term}</td>
+                  <td>{row.estimate.toFixed(6)}</td>
+                  <td>{row.stderr.toFixed(6)}</td>
+                  <td>{row.t_ratio === null ? "" : row.t_ratio.toFixed(6)}</td>
+                  <td>{row.p_value === null ? "" : row.p_value.toFixed(6)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {showEffects ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Effect</th><th>DF</th><th>SS</th><th>F Ratio</th><th>Prob &gt; F</th></tr></thead>
+            <tbody>
+              {(run.effect_tests[response] ?? []).map((row) => (
+                <tr key={row.effect}>
+                  <td>{row.effect}</td>
+                  <td>{row.df.toFixed(0)}</td>
+                  <td>{row.sum_squares.toFixed(6)}</td>
+                  <td>{row.f_ratio === null ? "" : row.f_ratio.toFixed(6)}</td>
+                  <td>{row.p_value === null ? "" : row.p_value.toFixed(6)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {showResiduals ? (
+        <>
+          <div ref={hostRef} className="fit-y-chart" />
+          <div className="residual-table">
+            <table>
+              <thead><tr><th>Row</th><th>Actual</th><th>Predicted</th><th>Residual</th><th>Studentized</th><th>Leverage</th><th>Cook</th></tr></thead>
+              <tbody>
+                {residualRows.slice(0, 25).map((row) => (
+                  <tr key={row.rowIndex}>
+                    <td>{(row.rowIndex + 1).toFixed(0)}</td>
+                    <td>{row.actual.toFixed(6)}</td>
+                    <td>{row.predicted.toFixed(6)}</td>
+                    <td>{row.residual.toFixed(6)}</td>
+                    <td>{row.studentized.toFixed(6)}</td>
+                    <td>{row.leverage.toFixed(6)}</td>
+                    <td>{row.cook.toFixed(6)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
 function CapabilityReport({
   run,
   menuOpen,
@@ -1340,6 +1538,12 @@ export default function App() {
   const [fitRun, setFitRun] = useState<FitModelRun | null>(null);
   const [activeProfileResponse, setActiveProfileResponse] = useState("");
   const [profilerValues, setProfilerValues] = useState<Record<string, number>>({});
+  const [fitModelMenuOpen, setFitModelMenuOpen] = useState(false);
+  const [showFitModelAnova, setShowFitModelAnova] = useState(true);
+  const [showFitModelParameters, setShowFitModelParameters] = useState(true);
+  const [showFitModelEffects, setShowFitModelEffects] = useState(false);
+  const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
+  const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
   const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
@@ -1402,6 +1606,12 @@ export default function App() {
     setFitEffects([]);
     setProfilerValues({});
     setActiveProfileResponse("");
+    setFitModelMenuOpen(false);
+    setShowFitModelAnova(true);
+    setShowFitModelParameters(true);
+    setShowFitModelEffects(false);
+    setShowFitModelResiduals(true);
+    setFitModelDiagnosticMode("residual");
     setSelectedRows(new Set());
     setShowNormalCurve(false);
     setPlotMenuOpen(false);
@@ -1636,6 +1846,7 @@ export default function App() {
     setFitRun(result);
     setActiveProfileResponse(result.responses[0]);
     setProfilerValues(defaults);
+    setFitModelMenuOpen(true);
     setStatus(`Fit Model ${result.id}: ${responses.join(", ")} by ${effects.join(", ")}.`);
   }
 
@@ -1778,11 +1989,14 @@ export default function App() {
   }
 
   function openFitModelPlatform() {
-    if (fitResponses.length === 0 && zones.y.length > 0) {
-      setFitResponses(zones.y.filter((field) => numericColumns.includes(field)));
+    const responses = zones.y.filter((field) => numericColumns.includes(field));
+    const responseFallback = responses.length > 0 ? responses : numericColumns.slice(0, 1);
+    if (fitResponses.length === 0) {
+      setFitResponses(responseFallback);
     }
-    if (fitEffects.length === 0 && zones.x.length > 0) {
-      setFitEffects(zones.x.filter((field) => numericColumns.includes(field)));
+    if (fitEffects.length === 0) {
+      const zoneEffects = zones.x.filter((field) => numericColumns.includes(field));
+      setFitEffects(zoneEffects.length > 0 ? zoneEffects : numericColumns.filter((field) => !responseFallback.includes(field)).slice(0, 2));
     }
     setActiveAnalyzePlatform("fitModel");
     setAnalyzeMenuOpen(false);
@@ -1986,7 +2200,22 @@ export default function App() {
                   ))}
                 </div>
                 <div ref={profilerRef} className="profiler-chart" />
-                <pre>{JSON.stringify({ terms: fitRun.terms, coefficients: fitRun.coefficients[profileResponse] }, null, 2)}</pre>
+                <FitModelReport
+                  run={fitRun}
+                  response={profileResponse}
+                  menuOpen={fitModelMenuOpen}
+                  showAnova={showFitModelAnova}
+                  showParameters={showFitModelParameters}
+                  showEffects={showFitModelEffects}
+                  showResiduals={showFitModelResiduals}
+                  diagnosticMode={fitModelDiagnosticMode}
+                  onToggleMenu={() => setFitModelMenuOpen((open) => !open)}
+                  onToggleAnova={() => setShowFitModelAnova((show) => !show)}
+                  onToggleParameters={() => setShowFitModelParameters((show) => !show)}
+                  onToggleEffects={() => setShowFitModelEffects((show) => !show)}
+                  onToggleResiduals={() => setShowFitModelResiduals((show) => !show)}
+                  onSetDiagnosticMode={setFitModelDiagnosticMode}
+                />
               </>
             ) : (
               <p>Select columns, assign Y and effects, then click Run to create an interactive Prediction Profiler.</p>

@@ -149,6 +149,10 @@ class FitModelRun(BaseModel):
     include_quadratic: bool
     metrics: dict[str, dict[str, float]]
     coefficients: dict[str, dict[str, float]]
+    anova: dict[str, list[dict[str, Any]]]
+    parameter_estimates: dict[str, list[dict[str, Any]]]
+    effect_tests: dict[str, list[dict[str, Any]]]
+    residuals: dict[str, list[dict[str, float]]]
     profiler_effects: list[ProfilerEffect]
     profiler: dict[str, dict[str, list[dict[str, float]]]]
     status: Literal["completed", "failed"]

@@ -27,7 +27,14 @@ app = FastAPI(title="Industrial Statistical Analytics API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5175", "http://localhost:5175"],
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:5174",
+        "http://localhost:5174",
+        "http://127.0.0.1:5175",
+        "http://localhost:5175",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -281,6 +288,10 @@ def run_fit_model(request: FitModelRequest) -> FitModelRun:
         include_quadratic=request.include_quadratic,
         metrics=result["metrics"],
         coefficients=result["coefficients"],
+        anova=result["anova"],
+        parameter_estimates=result["parameter_estimates"],
+        effect_tests=result["effect_tests"],
+        residuals=result["residuals"],
         profiler_effects=result["profiler_effects"],
         profiler=result["profiler"],
         status="completed",

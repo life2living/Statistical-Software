@@ -681,7 +681,13 @@ def fit_standard_least_squares(
 
     metrics: dict[str, dict[str, float]] = {}
     coefficients: dict[str, dict[str, float]] = {}
+    anova: dict[str, list[dict[str, Any]]] = {}
+    parameter_estimates: dict[str, list[dict[str, Any]]] = {}
+    effect_tests: dict[str, list[dict[str, Any]]] = {}
+    residual_diagnostics: dict[str, list[dict[str, float]]] = {}
     profiler: dict[str, dict[str, list[dict[str, float]]]] = {}
+    xtx = cross_product(design)
+    inverse_xtx = invert_matrix([[value + (1e-9 if row == column else 0.0) for column, value in enumerate(values)] for row, values in enumerate(xtx)])
 
     for response in responses:
         y = [float(row[response]) for row in model_rows]
@@ -692,18 +698,65 @@ def fit_standard_least_squares(
         sst = sum((actual - y_mean) ** 2 for actual in y)
         p = len(beta)
         n = len(y)
+        df_model = max(0, p - 1)
+        df_error = max(0, n - p)
+        df_total = max(0, n - 1)
+        ss_model = max(0.0, sst - sse)
+        ms_model = ss_model / df_model if df_model > 0 else 0.0
+        mse = sse / df_error if df_error > 0 else 0.0
+        f_ratio = ms_model / mse if mse > 0 and df_model > 0 else None
+        # Standard least-squares ANOVA and coefficient tests use public OLS t/F distributions.
+        f_p_value = float(stats.f.sf(f_ratio, df_model, df_error)) if f_ratio is not None and df_error > 0 else None
         r2 = 0.0 if sst == 0 else 1 - sse / sst
-        adj_r2 = 1 - (1 - r2) * (n - 1) / max(1, n - p)
-        rmse = (sse / max(1, n - p)) ** 0.5
+        adj_r2 = 1 - (1 - r2) * (n - 1) / max(1, df_error)
+        rmse = sqrt(mse) if mse > 0 else 0.0
 
         coefficients[response] = {term: beta[index] for index, term in enumerate(terms)}
-        metrics[response] = {"r2": r2, "adj_r2": adj_r2, "rmse": rmse, "n": float(n), "terms": float(p)}
+        metrics[response] = {"r2": r2, "adj_r2": adj_r2, "rmse": rmse, "n": float(n), "terms": float(p), "sse": sse, "sst": sst, "mse": mse}
+        anova[response] = [
+            {"source": "Model", "df": float(df_model), "sum_squares": ss_model, "mean_square": ms_model, "f_ratio": f_ratio, "p_value": f_p_value},
+            {"source": "Error", "df": float(df_error), "sum_squares": sse, "mean_square": mse, "f_ratio": None, "p_value": None},
+            {"source": "Total", "df": float(df_total), "sum_squares": sst, "mean_square": None, "f_ratio": None, "p_value": None},
+        ]
+        parameter_estimates[response] = []
+        effect_tests[response] = []
+        for index, term in enumerate(terms):
+            estimate = beta[index]
+            stderr = sqrt(max(0.0, mse * inverse_xtx[index][index])) if inverse_xtx else 0.0
+            t_ratio = estimate / stderr if stderr > 0 else None
+            p_value = float(2 * stats.t.sf(abs(t_ratio), df_error)) if t_ratio is not None and df_error > 0 else None
+            parameter_estimates[response].append({"term": term, "estimate": estimate, "stderr": stderr, "t_ratio": t_ratio, "p_value": p_value})
+            if term != "Intercept":
+                f_value = t_ratio * t_ratio if t_ratio is not None else None
+                effect_tests[response].append({"effect": term, "df": 1.0, "sum_squares": (f_value or 0.0) * mse, "f_ratio": f_value, "p_value": p_value})
+        residual_diagnostics[response] = []
+        for index, (actual, estimate, vector) in enumerate(zip(y, predicted, design)):
+            residual = actual - estimate
+            leverage = dot(vector, matrix_vector_product(inverse_xtx, vector)) if inverse_xtx else 0.0
+            leverage = min(max(leverage, 0.0), 0.999999)
+            studentized = residual / (rmse * sqrt(max(1e-12, 1 - leverage))) if rmse > 0 else 0.0
+            cook = ((residual * residual) / max(1e-12, p * mse)) * (leverage / max(1e-12, (1 - leverage) ** 2)) if mse > 0 else 0.0
+            residual_diagnostics[response].append(
+                {
+                    "rowIndex": float(index),
+                    "actual": actual,
+                    "predicted": estimate,
+                    "residual": residual,
+                    "studentized": studentized,
+                    "leverage": leverage,
+                    "cook": cook,
+                }
+            )
         profiler[response] = build_profiler_curves(beta, effects, include_quadratic, profiler_effects, baseline)
 
     return {
         "terms": terms,
         "metrics": metrics,
         "coefficients": coefficients,
+        "anova": anova,
+        "parameter_estimates": parameter_estimates,
+        "effect_tests": effect_tests,
+        "residuals": residual_diagnostics,
         "profiler_effects": profiler_effects,
         "profiler": profiler,
     }
@@ -744,17 +797,34 @@ def build_profiler_curves(
 
 
 def solve_least_squares(design: list[list[float]], y: list[float]) -> list[float]:
-    column_count = len(design[0])
-    xtx = [[0.0 for _ in range(column_count)] for _ in range(column_count)]
+    xtx = cross_product(design)
+    column_count = len(xtx)
     xty = [0.0 for _ in range(column_count)]
     for row, target in zip(design, y):
         for i in range(column_count):
             xty[i] += row[i] * target
-            for j in range(column_count):
-                xtx[i][j] += row[i] * row[j]
     for i in range(column_count):
         xtx[i][i] += 1e-9
     return gaussian_solve(xtx, xty)
+
+
+def cross_product(design: list[list[float]]) -> list[list[float]]:
+    column_count = len(design[0])
+    xtx = [[0.0 for _ in range(column_count)] for _ in range(column_count)]
+    for row in design:
+        for i in range(column_count):
+            for j in range(column_count):
+                xtx[i][j] += row[i] * row[j]
+    return xtx
+
+
+def invert_matrix(matrix: list[list[float]]) -> list[list[float]]:
+    size = len(matrix)
+    return [gaussian_solve([row[:] for row in matrix], [1.0 if index == column else 0.0 for index in range(size)]) for column in range(size)]
+
+
+def matrix_vector_product(matrix: list[list[float]], vector: list[float]) -> list[float]:
+    return [dot(row, vector) for row in matrix]
 
 
 def gaussian_solve(matrix: list[list[float]], vector: list[float]) -> list[float]:

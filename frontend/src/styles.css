@@ -1004,6 +1004,24 @@ input {
   width: 100%;
 }
 
+.fit-model-diagnostics {
+  border: 1px solid #cbd5e1;
+  margin-top: 12px;
+}
+
+.fit-model-diagnostics .fit-y-chart {
+  height: 300px;
+}
+
+.fit-model-diagnostics .residual-table {
+  margin-bottom: 10px;
+}
+
+.fit-model-diagnostics .residual-table td:first-child,
+.fit-model-diagnostics .residual-table th:first-child {
+  text-align: left;
+}
+
 pre {
   background: #0f172a;
   color: #dbeafe;
