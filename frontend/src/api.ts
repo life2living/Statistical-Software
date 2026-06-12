@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ProcessCapabilityRun } from "./types";
+import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ProcessCapabilityRun, TabulateRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -62,6 +62,18 @@ export function runDistribution(
       method: "distribution",
       columns,
       parameters: roles
+    })
+  });
+}
+
+export function runTabulate(datasetId: string, columns: string[], groupBy: string[]): Promise<TabulateRun> {
+  return request<TabulateRun>("/analysis/run", {
+    method: "POST",
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      method: "tabulate",
+      columns,
+      parameters: { group_by: groupBy }
     })
   });
 }

@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runMultivariate, runOneway, runProcessCapability, runSpc, saveChart, saveFitModelDiagnostics } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ProcessCapabilityRun } from "./types";
+import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runMultivariate, runOneway, runProcessCapability, runSpc, runTabulate, saveChart, saveFitModelDiagnostics } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ProcessCapabilityRun, TabulateRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -860,6 +860,91 @@ function DistributionReport({
   );
 }
 
+function TabulateReport({
+  run,
+  menuOpen,
+  showCount,
+  showMean,
+  showStd,
+  showRange,
+  onToggleMenu,
+  onToggleCount,
+  onToggleMean,
+  onToggleStd,
+  onToggleRange
+}: {
+  run: TabulateRun | null;
+  menuOpen: boolean;
+  showCount: boolean;
+  showMean: boolean;
+  showStd: boolean;
+  showRange: boolean;
+  onToggleMenu: () => void;
+  onToggleCount: () => void;
+  onToggleMean: () => void;
+  onToggleStd: () => void;
+  onToggleRange: () => void;
+}) {
+  if (!run) {
+    return (
+      <section className="distribution-report-window">
+        <p>Assign numeric Y columns and optional grouping columns, then click Run.</p>
+      </section>
+    );
+  }
+
+  const result = run.outputs.tabulate;
+  const visibleColumns = [
+    ...(result.group_columns.length ? result.group_columns : ["Group"]),
+    ...(showCount ? ["N Rows"] : []),
+    ...result.y_columns.flatMap((column) => [
+      ...(showCount ? [`${column} N`, `${column} Missing`] : []),
+      ...(showMean ? [`${column} Mean`] : []),
+      ...(showStd ? [`${column} Std Dev`] : []),
+      ...(showRange ? [`${column} Min`, `${column} Max`] : [])
+    ])
+  ];
+
+  return (
+    <section className="distribution-report-window">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Tabulate options">
+            ▶
+          </button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onToggleCount}>{showCount ? "Hide Counts" : "Counts"}</button>
+              <button onClick={onToggleMean}>{showMean ? "Hide Means" : "Means"}</button>
+              <button onClick={onToggleStd}>{showStd ? "Hide Std Dev" : "Std Dev"}</button>
+              <button onClick={onToggleRange}>{showRange ? "Hide Range" : "Range"}</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>Tabulate</h3>
+        <span>{result.rows.length} groups</span>
+      </div>
+      <div className="residual-table">
+        <table>
+          <thead>
+            <tr>{visibleColumns.map((column) => <th key={column}>{column}</th>)}</tr>
+          </thead>
+          <tbody>
+            {result.rows.map((row, index) => (
+              <tr key={index}>
+                {visibleColumns.map((column) => {
+                  const value = row[column];
+                  return <td key={column}>{typeof value === "number" ? value.toFixed(6) : value ?? ""}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function FitYByXReport({
   run,
   menuOpen,
@@ -1673,7 +1758,7 @@ export default function App() {
   const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -1688,6 +1773,14 @@ export default function App() {
   const [showDistributionSummary, setShowDistributionSummary] = useState(true);
   const [showDistributionQuantiles, setShowDistributionQuantiles] = useState(true);
   const [showDistributionNormal, setShowDistributionNormal] = useState(false);
+  const [tabulateY, setTabulateY] = useState<string[]>([]);
+  const [tabulateGroups, setTabulateGroups] = useState<string[]>([]);
+  const [tabulateRun, setTabulateRun] = useState<TabulateRun | null>(null);
+  const [tabulateMenuOpen, setTabulateMenuOpen] = useState(false);
+  const [showTabulateCount, setShowTabulateCount] = useState(true);
+  const [showTabulateMean, setShowTabulateMean] = useState(true);
+  const [showTabulateStd, setShowTabulateStd] = useState(true);
+  const [showTabulateRange, setShowTabulateRange] = useState(false);
   const [fitYResponse, setFitYResponse] = useState<string | null>(null);
   const [fitXFactor, setFitXFactor] = useState<string | null>(null);
   const [fitYByXRun, setFitYByXRun] = useState<FitYByXRun | null>(null);
@@ -1753,6 +1846,10 @@ export default function App() {
     setDistributionWeight(null);
     setDistributionRun(null);
     setDistributionMenuOpen(null);
+    setTabulateY([]);
+    setTabulateGroups([]);
+    setTabulateRun(null);
+    setTabulateMenuOpen(false);
     setFitYResponse(null);
     setFitXFactor(null);
     setFitYByXRun(null);
@@ -2018,6 +2115,28 @@ export default function App() {
     setAnalyzeMenuOpen(false);
   }
 
+  async function handleTabulate() {
+    if (!preview) return;
+    const responses = tabulateY.length > 0 ? tabulateY : zones.y.filter((field) => numericColumns.includes(field));
+    if (responses.length === 0) {
+      setStatus("Tabulate requires at least one numeric Y column.");
+      return;
+    }
+    const result = await runTabulate(preview.dataset.id, responses, tabulateGroups);
+    setTabulateRun(result);
+    setTabulateMenuOpen(true);
+    setStatus(`Tabulate ${result.id}: ${responses.join(", ")} across ${result.outputs.tabulate.rows.length} groups.`);
+  }
+
+  function openTabulatePlatform() {
+    if (tabulateY.length === 0) {
+      const seeded = zones.y.filter((field) => numericColumns.includes(field));
+      setTabulateY(seeded.length > 0 ? seeded : numericColumns.slice(0, 2));
+    }
+    setActiveAnalyzePlatform("tabulate");
+    setAnalyzeMenuOpen(false);
+  }
+
   async function handleMultivariate() {
     if (!preview) return;
     const columnsForRun = multivariateY.length > 1 ? multivariateY : numericColumns.slice(0, 4);
@@ -2191,7 +2310,7 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
@@ -2200,7 +2319,7 @@ export default function App() {
                   Distribution
                 </button>
                 <button onClick={openFitYByXPlatform}>Fit Y by X</button>
-                <button>Tabulate</button>
+                <button onClick={openTabulatePlatform}>Tabulate</button>
                 <button className="primary" onClick={openFitModelPlatform}>
                   Fit Model
                 </button>
@@ -2223,7 +2342,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
         <span>{status}</span>
       </section>
 
@@ -2476,6 +2595,70 @@ export default function App() {
             onToggleSummary={() => setShowDistributionSummary((show) => !show)}
             onToggleQuantiles={() => setShowDistributionQuantiles((show) => !show)}
             onToggleNormal={() => setShowDistributionNormal((show) => !show)}
+          />
+        </section>
+      ) : activeAnalyzePlatform === "tabulate" ? (
+        <section className="distribution-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Assign Roles</h3>
+              <DistributionRoleDrop
+                label="Y Columns"
+                values={tabulateY}
+                multiple
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setTabulateY((current) => current.includes(field) ? current : [...current, field])}
+                onRemove={(field) => setTabulateY((current) => current.filter((item) => item !== field))}
+              />
+              <DistributionRoleDrop
+                label="Grouping Columns"
+                values={tabulateGroups}
+                multiple
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setTabulateGroups((current) => current.includes(field) ? current : [...current, field])}
+                onRemove={(field) => setTabulateGroups((current) => current.filter((item) => item !== field))}
+              />
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleTabulate}>Run</button>
+            <button onClick={() => {
+              setTabulateY([]);
+              setTabulateGroups([]);
+              setTabulateRun(null);
+              setTabulateMenuOpen(false);
+            }}>
+              Remove
+            </button>
+            <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
+          </aside>
+
+          <TabulateReport
+            run={tabulateRun}
+            menuOpen={tabulateMenuOpen}
+            showCount={showTabulateCount}
+            showMean={showTabulateMean}
+            showStd={showTabulateStd}
+            showRange={showTabulateRange}
+            onToggleMenu={() => setTabulateMenuOpen((open) => !open)}
+            onToggleCount={() => setShowTabulateCount((show) => !show)}
+            onToggleMean={() => setShowTabulateMean((show) => !show)}
+            onToggleStd={() => setShowTabulateStd((show) => !show)}
+            onToggleRange={() => setShowTabulateRange((show) => !show)}
           />
         </section>
       ) : activeAnalyzePlatform === "multivariate" ? (

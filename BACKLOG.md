@@ -28,7 +28,7 @@
 - [x] Fit Model lack-of-fit test with pure-error decomposition.
 - [x] Prediction Profiler mean-response confidence intervals.
 - [ ] Fit Model richer profiler options, desirability, lock factors, and formula-column execution.
-- [ ] Tabulate platform for grouped summary tables.
+- [x] Tabulate platform first slice for grouped summary tables.
 - [ ] Pareto, Gauge R&R, Variability Chart, and measurement system analysis.
 
 ## P2 Modeling And Quality Workflows

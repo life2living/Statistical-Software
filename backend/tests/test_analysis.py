@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import control_chart_imr, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits
+from app.analysis import control_chart_imr, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits, tabulate_summary
 
 
 ROWS = [
@@ -164,6 +164,21 @@ def test_distribution_groups_by_column() -> None:
 
     assert groups["A"]["mean"] == 2.0
     assert groups["B"]["mean"] == 10.0
+
+
+def test_tabulate_summary_groups_numeric_columns() -> None:
+    rows = [
+        {"line": "A", "yield": 8.0, "defects": 1.0},
+        {"line": "A", "yield": 10.0, "defects": None},
+        {"line": "B", "yield": 4.0, "defects": 3.0},
+    ]
+    result = tabulate_summary(rows, ["yield", "defects"], ["line"])
+    grouped = {row["line"]: row for row in result["rows"]}
+
+    assert grouped["A"]["N Rows"] == 2.0
+    assert grouped["A"]["yield Mean"] == 9.0
+    assert grouped["A"]["defects Missing"] == 1.0
+    assert grouped["B"]["yield Min"] == 4.0
 
 
 def test_distribution_uses_frequency_and_weight() -> None:

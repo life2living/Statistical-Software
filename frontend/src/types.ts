@@ -89,6 +89,17 @@ export interface DistributionRun extends AnalysisRun {
   };
 }
 
+export interface TabulateRun extends AnalysisRun {
+  method: "tabulate";
+  outputs: {
+    tabulate: {
+      y_columns: string[];
+      group_columns: string[];
+      rows: Record<string, string | number | null>[];
+    };
+  };
+}
+
 export interface FitYByXRun extends AnalysisRun {
   method: "fit_y_by_x";
   outputs: {

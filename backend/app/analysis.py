@@ -262,6 +262,35 @@ def distribution(
     return {"columns": output_columns}
 
 
+def tabulate_summary(rows: list[dict[str, Any]], y_columns: list[str], group_columns: list[str] | None = None) -> dict[str, Any]:
+    group_columns = group_columns or []
+    groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    for row in rows:
+        key = tuple(str(row.get(column, "")) for column in group_columns) if group_columns else ("All",)
+        groups.setdefault(key, []).append(row)
+
+    result_rows: list[dict[str, Any]] = []
+    for key, group_rows in groups.items():
+        output: dict[str, Any] = {group_columns[index] if group_columns else "Group": value for index, value in enumerate(key)}
+        output["N Rows"] = float(len(group_rows))
+        for column in y_columns:
+            values = numeric_values(group_rows, column)
+            output[f"{column} N"] = float(len(values))
+            output[f"{column} Missing"] = float(len(group_rows) - len(values))
+            output[f"{column} Mean"] = mean(values) if values else None
+            output[f"{column} Std Dev"] = stdev(values) if len(values) > 1 else 0.0
+            output[f"{column} Min"] = min(values) if values else None
+            output[f"{column} Max"] = max(values) if values else None
+        result_rows.append(output)
+
+    sort_columns = group_columns or ["Group"]
+    return {
+        "y_columns": y_columns,
+        "group_columns": group_columns,
+        "rows": sorted(result_rows, key=lambda item: tuple(str(item.get(column, "")) for column in sort_columns)),
+    }
+
+
 def distribution_group_summary(
     group_name: str,
     rows: list[dict[str, Any]],
