@@ -65,6 +65,30 @@ def test_control_chart_xbar_r_returns_subgroup_limits() -> None:
     assert len(result["xbar"]["points"]) == 3
 
 
+def test_control_chart_phase_limits_recompute_independently() -> None:
+    rows = [
+        {"lot": 1, "phase": "Before", "x": 10.0},
+        {"lot": 2, "phase": "Before", "x": 12.0},
+        {"lot": 3, "phase": "After", "x": 30.0},
+        {"lot": 4, "phase": "After", "x": 32.0},
+    ]
+    result = control_chart_imr(rows, "x", x_column="lot", phase_column="phase")
+
+    first_point = result["individuals"]["points"][0]
+    third_point = result["individuals"]["points"][2]
+    assert first_point["center"] == 11.0
+    assert third_point["center"] == 31.0
+    assert len(result["phase_limits"]) == 2
+
+
+def test_control_chart_extended_rules_detect_run_above_center() -> None:
+    rows = [{"lot": index, "x": 10.0} for index in range(2)]
+    rows.extend({"lot": index + 2, "x": 11.0 + index * 0.01} for index in range(9))
+    result = control_chart_imr(rows, "x", x_column="lot")
+
+    assert any("nine points on one side" in violation["rule"] for violation in result["violations"])
+
+
 def test_control_chart_attribute_p_and_u_limits() -> None:
     rows = [
         {"lot": "A", "defective": 2.0, "sample": 100.0, "defects": 5.0},

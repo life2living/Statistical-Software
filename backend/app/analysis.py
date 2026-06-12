@@ -79,6 +79,65 @@ def spc_control_limits(rows: list[dict[str, Any]], column: str) -> dict[str, Any
     return {"center": center, "ucl": ucl, "lcl": lcl, "violations": violations}
 
 
+def group_by_phase(points: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    phases: dict[str, list[dict[str, Any]]] = {}
+    for point in points:
+        phases.setdefault(str(point.get("phase", "All")), []).append(point)
+    return phases
+
+
+def assign_limit_flags(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {**point, "beyondLimits": point["value"] > point["ucl"] or point["value"] < point["lcl"]}
+        for point in points
+    ]
+
+
+def phase_summary(points: list[dict[str, Any]]) -> list[dict[str, float | str]]:
+    summaries = []
+    for phase, phase_points in group_by_phase(points).items():
+        first = phase_points[0]
+        summaries.append(
+            {
+                "phase": phase,
+                "n": float(len(phase_points)),
+                "center": first["center"],
+                "ucl": first["ucl"],
+                "lcl": first["lcl"],
+            }
+        )
+    return summaries
+
+
+def extended_control_rule_violations(points: list[dict[str, Any]], chart: str) -> list[dict[str, Any]]:
+    # Common JMP/Nelson-style supplementary tests, evaluated within each phase.
+    violations: list[dict[str, Any]] = []
+    for _, phase_points in group_by_phase(points).items():
+        signs = [1 if point["value"] > point["center"] else -1 if point["value"] < point["center"] else 0 for point in phase_points]
+        directions = [
+            1 if phase_points[index]["value"] > phase_points[index - 1]["value"] else -1 if phase_points[index]["value"] < phase_points[index - 1]["value"] else 0
+            for index in range(1, len(phase_points))
+        ]
+
+        for index, point in enumerate(phase_points):
+            if point.get("beyondLimits"):
+                violations.append({"chart": chart, "rule": "Test 1: one point beyond 3-sigma limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]})
+
+            if index >= 8 and signs[index] != 0 and all(sign == signs[index] for sign in signs[index - 8:index + 1]):
+                violations.append({"chart": chart, "rule": "Test 2: nine points on one side of center", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]})
+
+            if index >= 5:
+                trend = directions[index - 5:index]
+                if all(direction == 1 for direction in trend) or all(direction == -1 for direction in trend):
+                    violations.append({"chart": chart, "rule": "Test 3: six points steadily increasing or decreasing", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]})
+
+            if index >= 14:
+                alternation = directions[index - 13:index]
+                if all(direction != 0 for direction in alternation) and all(alternation[offset] == -alternation[offset - 1] for offset in range(1, len(alternation))):
+                    violations.append({"chart": chart, "rule": "Test 4: fourteen points alternating up and down", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]})
+    return violations
+
+
 def control_chart_imr(
     rows: list[dict[str, Any]],
     y_column: str,
@@ -104,37 +163,43 @@ def control_chart_imr(
     if not observations:
         raise ValueError("Control Chart Builder requires at least one numeric Y value.")
 
-    values = [item["value"] for item in observations]
-    moving_ranges = [abs(values[index] - values[index - 1]) for index in range(1, len(values))]
-    center = mean(values)
-    mr_bar = mean(moving_ranges) if moving_ranges else 0.0
-    # I-MR limits use the public NIST moving-range estimator with d2=1.128 for ranges of 2.
-    sigma = mr_bar / 1.128 if mr_bar > 0 else 0.0
-    i_ucl = center + 3 * sigma
-    i_lcl = center - 3 * sigma
-    mr_ucl = 3.267 * mr_bar
-    mr_lcl = 0.0
+    points: list[dict[str, Any]] = []
+    mr_points: list[dict[str, Any]] = []
+    for _, phase_points in group_by_phase(observations).items():
+        values = [item["value"] for item in phase_points]
+        moving_ranges = [abs(values[index] - values[index - 1]) for index in range(1, len(values))]
+        center = mean(values)
+        mr_bar = mean(moving_ranges) if moving_ranges else 0.0
+        # I-MR limits use the public NIST moving-range estimator with d2=1.128 for ranges of 2.
+        sigma = mr_bar / 1.128 if mr_bar > 0 else 0.0
+        i_ucl = center + 3 * sigma
+        i_lcl = center - 3 * sigma
+        mr_ucl = 3.267 * mr_bar
+        mr_lcl = 0.0
+        points.extend({**item, "center": center, "ucl": i_ucl, "lcl": i_lcl} for item in phase_points)
+        mr_points.extend(
+            {
+                "rowIndex": phase_points[index]["rowIndex"],
+                "label": phase_points[index]["label"],
+                "phase": phase_points[index]["phase"],
+                "value": moving_ranges[index - 1],
+                "center": mr_bar,
+                "ucl": mr_ucl,
+                "lcl": mr_lcl,
+            }
+            for index in range(1, len(phase_points))
+        )
 
-    points = [
-        {**item, "beyondLimits": item["value"] > i_ucl or item["value"] < i_lcl}
-        for item in observations
-    ]
-    mr_points = [
-        {
-            "rowIndex": observations[index]["rowIndex"],
-            "label": observations[index]["label"],
-            "phase": observations[index]["phase"],
-            "value": moving_ranges[index - 1],
-            "beyondLimits": moving_ranges[index - 1] > mr_ucl,
-        }
-        for index in range(1, len(observations))
-    ]
-    violations = [
-        {"chart": "I", "rule": "Beyond 3-sigma limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
-        for point in points
-        if point["beyondLimits"]
-    ] + [
-        {"chart": "MR", "rule": "Moving range above UCL", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
+    points = assign_limit_flags(sorted(points, key=lambda point: point["rowIndex"]))
+    mr_points = assign_limit_flags(sorted(mr_points, key=lambda point: point["rowIndex"]))
+    center = mean(point["center"] for point in points)
+    i_ucl = mean(point["ucl"] for point in points)
+    i_lcl = mean(point["lcl"] for point in points)
+    mr_bar = mean(point["center"] for point in mr_points) if mr_points else 0.0
+    mr_ucl = mean(point["ucl"] for point in mr_points) if mr_points else 0.0
+    mr_lcl = 0.0
+    violations = extended_control_rule_violations(points, "I") + [
+        {"chart": "MR", "rule": "Test 1: moving range beyond control limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
         for point in mr_points
         if point["beyondLimits"]
     ]
@@ -146,6 +211,7 @@ def control_chart_imr(
         "phase": phase_column,
         "n": float(len(points)),
         "missing": float(missing),
+        "phase_limits": phase_summary(points),
         "individuals": {"center": center, "ucl": i_ucl, "lcl": i_lcl, "points": points},
         "moving_range": {"center": mr_bar, "ucl": mr_ucl, "lcl": mr_lcl, "points": mr_points},
         "violations": violations,
@@ -207,27 +273,32 @@ def control_chart_xbar_r(
         points.append({**representative, "value": subgroup_mean, "subgroupSize": float(len(items))})
         range_points.append({**representative, "value": subgroup_range, "subgroupSize": float(len(items))})
 
-    xbarbar = mean(point["value"] for point in points)
-    rbar = mean(point["value"] for point in range_points)
-    xbar_ucl = xbarbar + a2 * rbar
-    xbar_lcl = xbarbar - a2 * rbar
-    r_ucl = d4 * rbar
-    r_lcl = d3 * rbar
+    xbar_points: list[dict[str, Any]] = []
+    limited_range_points: list[dict[str, Any]] = []
+    for phase, phase_points in group_by_phase(points).items():
+        phase_ranges = [point for point in range_points if point["phase"] == phase]
+        phase_sizes = [int(point["subgroupSize"]) for point in phase_points]
+        phase_subgroup_size = min(max(round(mean(phase_sizes)), 2), 10)
+        phase_a2, phase_d3, phase_d4 = XBAR_R_CONSTANTS[phase_subgroup_size]
+        xbarbar = mean(point["value"] for point in phase_points)
+        rbar = mean(point["value"] for point in phase_ranges)
+        xbar_ucl = xbarbar + phase_a2 * rbar
+        xbar_lcl = xbarbar - phase_a2 * rbar
+        r_ucl = phase_d4 * rbar
+        r_lcl = phase_d3 * rbar
+        xbar_points.extend({**point, "center": xbarbar, "ucl": xbar_ucl, "lcl": xbar_lcl} for point in phase_points)
+        limited_range_points.extend({**point, "center": rbar, "ucl": r_ucl, "lcl": r_lcl} for point in phase_ranges)
 
-    xbar_points = [
-        {**point, "beyondLimits": point["value"] > xbar_ucl or point["value"] < xbar_lcl}
-        for point in points
-    ]
-    range_points = [
-        {**point, "beyondLimits": point["value"] > r_ucl or point["value"] < r_lcl}
-        for point in range_points
-    ]
-    violations = [
-        {"chart": "Xbar", "rule": "Subgroup mean beyond control limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
-        for point in xbar_points
-        if point["beyondLimits"]
-    ] + [
-        {"chart": "R", "rule": "Subgroup range beyond control limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
+    xbar_points = assign_limit_flags(sorted(xbar_points, key=lambda point: point["rowIndex"]))
+    range_points = assign_limit_flags(sorted(limited_range_points, key=lambda point: point["rowIndex"]))
+    xbarbar = mean(point["center"] for point in xbar_points)
+    xbar_ucl = mean(point["ucl"] for point in xbar_points)
+    xbar_lcl = mean(point["lcl"] for point in xbar_points)
+    rbar = mean(point["center"] for point in range_points)
+    r_ucl = mean(point["ucl"] for point in range_points)
+    r_lcl = mean(point["lcl"] for point in range_points)
+    violations = extended_control_rule_violations(xbar_points, "Xbar") + [
+        {"chart": "R", "rule": "Test 1: subgroup range beyond control limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
         for point in range_points
         if point["beyondLimits"]
     ]
@@ -241,6 +312,7 @@ def control_chart_xbar_r(
         "missing": float(missing),
         "subgroup_count": float(len(points)),
         "subgroup_size": float(subgroup_size),
+        "phase_limits": phase_summary(xbar_points),
         "xbar": {"center": xbarbar, "ucl": xbar_ucl, "lcl": xbar_lcl, "points": xbar_points},
         "range": {"center": rbar, "ucl": r_ucl, "lcl": r_lcl, "points": range_points},
         "violations": violations,
@@ -294,44 +366,44 @@ def control_chart_attribute(
 
     # Attribute chart limits follow public NIST e-Handbook SPC guidance:
     # binomial p/np charts and Poisson c/u charts with 3-sigma limits.
-    if chart_type == "p":
-        center = total_count / total_size
-    elif chart_type == "np":
-        center = total_count / len(points)
-        pbar = total_count / total_size
-    elif chart_type == "u":
-        center = total_count / total_size
-    else:
-        center = total_count / len(points)
-
     plotted_points: list[dict[str, Any]] = []
-    for point in points:
-        sample_size = point["sampleSize"]
+    for _, phase_points in group_by_phase(points).items():
+        phase_count = sum(point["count"] for point in phase_points)
+        phase_size = sum(point["sampleSize"] for point in phase_points)
         if chart_type == "p":
-            sigma = sqrt(max(0.0, center * (1 - center) / sample_size))
-            ucl = min(1.0, center + 3 * sigma)
-            lcl = max(0.0, center - 3 * sigma)
+            center = phase_count / phase_size
         elif chart_type == "np":
-            sigma = sqrt(max(0.0, sample_size * pbar * (1 - pbar)))
-            expected = sample_size * pbar
-            ucl = expected + 3 * sigma
-            lcl = max(0.0, expected - 3 * sigma)
+            center = phase_count / len(phase_points)
+            pbar = phase_count / phase_size
         elif chart_type == "u":
-            sigma = sqrt(max(0.0, center / sample_size))
-            ucl = center + 3 * sigma
-            lcl = max(0.0, center - 3 * sigma)
+            center = phase_count / phase_size
         else:
-            sigma = sqrt(max(0.0, center))
-            ucl = center + 3 * sigma
-            lcl = max(0.0, center - 3 * sigma)
-        plotted_points.append({**point, "ucl": ucl, "lcl": lcl, "beyondLimits": point["value"] > ucl or point["value"] < lcl})
+            center = phase_count / len(phase_points)
+        for point in phase_points:
+            sample_size = point["sampleSize"]
+            if chart_type == "p":
+                sigma = sqrt(max(0.0, center * (1 - center) / sample_size))
+                ucl = min(1.0, center + 3 * sigma)
+                lcl = max(0.0, center - 3 * sigma)
+            elif chart_type == "np":
+                sigma = sqrt(max(0.0, sample_size * pbar * (1 - pbar)))
+                expected = sample_size * pbar
+                ucl = expected + 3 * sigma
+                lcl = max(0.0, expected - 3 * sigma)
+            elif chart_type == "u":
+                sigma = sqrt(max(0.0, center / sample_size))
+                ucl = center + 3 * sigma
+                lcl = max(0.0, center - 3 * sigma)
+            else:
+                sigma = sqrt(max(0.0, center))
+                ucl = center + 3 * sigma
+                lcl = max(0.0, center - 3 * sigma)
+            plotted_points.append({**point, "center": center, "ucl": ucl, "lcl": lcl})
 
     chart_name = chart_type.upper() if chart_type != "u" else "U"
-    violations = [
-        {"chart": chart_name, "rule": "Point beyond attribute control limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
-        for point in plotted_points
-        if point["beyondLimits"]
-    ]
+    plotted_points = assign_limit_flags(sorted(plotted_points, key=lambda point: point["rowIndex"]))
+    center = mean(point["center"] for point in plotted_points)
+    violations = extended_control_rule_violations(plotted_points, chart_name)
     return {
         "chart_type": chart_type,
         "y": y_column,
@@ -340,6 +412,7 @@ def control_chart_attribute(
         "sample_size": sample_size_column,
         "n": float(len(plotted_points)),
         "missing": float(missing),
+        "phase_limits": phase_summary(plotted_points),
         "attribute": {"center": center, "points": plotted_points},
         "violations": violations,
     }

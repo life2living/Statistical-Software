@@ -575,10 +575,14 @@ function buildControlChartOption(run: ControlChartRun): EChartsOption {
             rowIndex: point.rowIndex,
             itemStyle: point.beyondLimits ? { color: "#dc2626", borderColor: "#7f1d1d", borderWidth: 2 } : undefined,
             symbolSize: point.beyondLimits ? 10 : 6
-          })),
-          markLine: { symbol: "none", data: [
-            { name: "CL", yAxis: result.attribute.center, lineStyle: { color: "#2563eb" } }
-          ] }
+          }))
+        },
+        {
+          type: "line",
+          name: "CL",
+          symbol: "none",
+          lineStyle: { color: "#2563eb", type: "dashed" },
+          data: result.attribute.points.map((point) => point.center)
         },
         {
           type: "line",
@@ -631,12 +635,34 @@ function buildControlChartOption(run: ControlChartRun): EChartsOption {
           rowIndex: point.rowIndex,
           itemStyle: point.beyondLimits ? { color: "#dc2626", borderColor: "#7f1d1d", borderWidth: 2 } : undefined,
           symbolSize: point.beyondLimits ? 10 : 6
-        })),
-        markLine: { symbol: "none", data: [
-          { name: "UCL", yAxis: primary.ucl, lineStyle: { color: "#dc2626" } },
-          { name: "CL", yAxis: primary.center, lineStyle: { color: "#2563eb" } },
-          { name: "LCL", yAxis: primary.lcl, lineStyle: { color: "#dc2626" } }
-        ] }
+        }))
+      },
+      {
+        type: "line",
+        name: `${primaryName} UCL`,
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        symbol: "none",
+        lineStyle: { color: "#dc2626", type: "dashed" },
+        data: primary.points.map((point) => point.ucl)
+      },
+      {
+        type: "line",
+        name: `${primaryName} CL`,
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        symbol: "none",
+        lineStyle: { color: "#2563eb", type: "dashed" },
+        data: primary.points.map((point) => point.center)
+      },
+      {
+        type: "line",
+        name: `${primaryName} LCL`,
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        symbol: "none",
+        lineStyle: { color: "#dc2626", type: "dashed" },
+        data: primary.points.map((point) => point.lcl)
       },
       {
         type: "line",
@@ -648,12 +674,34 @@ function buildControlChartOption(run: ControlChartRun): EChartsOption {
           rowIndex: point.rowIndex,
           itemStyle: point.beyondLimits ? { color: "#dc2626", borderColor: "#7f1d1d", borderWidth: 2 } : undefined,
           symbolSize: point.beyondLimits ? 10 : 6
-        })),
-        markLine: { symbol: "none", data: [
-          { name: "UCL", yAxis: secondary.ucl, lineStyle: { color: "#dc2626" } },
-          { name: secondaryAxisName, yAxis: secondary.center, lineStyle: { color: "#2563eb" } },
-          { name: "LCL", yAxis: secondary.lcl, lineStyle: { color: "#dc2626" } }
-        ] }
+        }))
+      },
+      {
+        type: "line",
+        name: `${secondaryName} UCL`,
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        symbol: "none",
+        lineStyle: { color: "#dc2626", type: "dashed" },
+        data: secondary.points.map((point) => point.ucl)
+      },
+      {
+        type: "line",
+        name: `${secondaryName} CL`,
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        symbol: "none",
+        lineStyle: { color: "#2563eb", type: "dashed" },
+        data: secondary.points.map((point) => point.center)
+      },
+      {
+        type: "line",
+        name: `${secondaryName} LCL`,
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        symbol: "none",
+        lineStyle: { color: "#dc2626", type: "dashed" },
+        data: secondary.points.map((point) => point.lcl)
       }
     ] as SeriesOption[]
   };

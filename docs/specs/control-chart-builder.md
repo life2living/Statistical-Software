@@ -15,8 +15,8 @@ The clean-room Control Chart Builder implements I-MR, Xbar-R, and attribute-char
 - Xbar-R output: subgroup mean chart and subgroup range chart in one panel.
 - P/NP/C/U output: attribute chart with per-point limits where sample sizes vary.
 - Red triangle menu: show/hide rule violations.
-- Rule coverage: points beyond displayed 3-sigma limits.
-- Phase is captured as a role in the API and output points; full per-phase limit recomputation is left for the next slice.
+- Rule coverage: displayed 3-sigma violations plus supplementary run/trend/alternation tests.
+- Phase is captured as a role in the API; center lines and limits are recomputed independently within each phase.
 
 ## API
 
@@ -42,6 +42,7 @@ Returns `outputs.control_chart`:
 - `xbar`: Xbar-bar, UCL, LCL, subgroup mean points when `chart_type=xbar_r`
 - `range`: R-bar, UCL, LCL, subgroup range points when `chart_type=xbar_r`
 - `attribute`: center and plotted points with point-level UCL/LCL when `chart_type` is `p`, `np`, `c`, or `u`
+- `phase_limits`: phase-level center, UCL, and LCL summaries
 - `violations`: displayed rule violations
 
 ## Math
@@ -67,3 +68,10 @@ Attribute chart limits use public binomial/Poisson approximations:
 - NP chart: plotted `d_i`, limits use `n_i * pbar +/- 3 * sqrt(n_i*pbar(1-pbar))`
 - C chart: plotted defect count, limits `cbar +/- 3 * sqrt(cbar)`
 - U chart: `u_i = c_i / n_i`, `ubar = sum(c) / sum(n)`, limits `ubar +/- 3 * sqrt(ubar/n_i)`
+
+When a Phase role is assigned, each phase computes its own center and limits. Supplementary tests are evaluated within phase boundaries:
+
+- Test 1: one point beyond 3-sigma limits.
+- Test 2: nine consecutive points on one side of center.
+- Test 3: six consecutive points steadily increasing or decreasing.
+- Test 4: fourteen consecutive points alternating up and down.

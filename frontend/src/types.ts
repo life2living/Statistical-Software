@@ -205,33 +205,34 @@ export interface ControlChartRun extends AnalysisRun {
       missing: number;
       subgroup_count?: number;
       subgroup_size?: number;
+      phase_limits?: { phase: string; n: number; center: number; ucl: number; lcl: number }[];
       individuals?: {
         center: number;
         ucl: number;
         lcl: number;
-        points: { rowIndex: number; label: string; phase: string; value: number; beyondLimits: boolean }[];
+        points: { rowIndex: number; label: string; phase: string; value: number; center: number; ucl: number; lcl: number; beyondLimits: boolean }[];
       };
       moving_range?: {
         center: number;
         ucl: number;
         lcl: number;
-        points: { rowIndex: number; label: string; phase: string; value: number; beyondLimits: boolean }[];
+        points: { rowIndex: number; label: string; phase: string; value: number; center: number; ucl: number; lcl: number; beyondLimits: boolean }[];
       };
       xbar?: {
         center: number;
         ucl: number;
         lcl: number;
-        points: { rowIndex: number; label: string; phase: string; value: number; subgroupSize: number; beyondLimits: boolean }[];
+        points: { rowIndex: number; label: string; phase: string; value: number; center: number; ucl: number; lcl: number; subgroupSize: number; beyondLimits: boolean }[];
       };
       range?: {
         center: number;
         ucl: number;
         lcl: number;
-        points: { rowIndex: number; label: string; phase: string; value: number; subgroupSize: number; beyondLimits: boolean }[];
+        points: { rowIndex: number; label: string; phase: string; value: number; center: number; ucl: number; lcl: number; subgroupSize: number; beyondLimits: boolean }[];
       };
       attribute?: {
         center: number;
-        points: { rowIndex: number; label: string; phase: string; value: number; count: number; sampleSize: number; ucl: number; lcl: number; beyondLimits: boolean }[];
+        points: { rowIndex: number; label: string; phase: string; value: number; count: number; sampleSize: number; center: number; ucl: number; lcl: number; beyondLimits: boolean }[];
       };
       violations: { chart: string; rule: string; rowIndex: number; label: string; value: number }[];
     };
