@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runMultivariate, runOneway, runProcessCapability, runSpc, runTabulate, saveChart, saveFitModelDiagnostics } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ProcessCapabilityRun, TabulateRun } from "./types";
+import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, saveChart, saveFitModelDiagnostics } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -721,6 +721,39 @@ function buildControlChartOption(run: ControlChartRun): EChartsOption {
         lineStyle: { color: "#dc2626", type: "dashed" },
         data: secondary.points.map((point) => point.lcl)
       }
+    ] as SeriesOption[]
+  };
+}
+
+function buildParetoOption(run: ParetoRun, showCumulative: boolean): EChartsOption {
+  const result = run.outputs.pareto;
+  const group = result.groups[0];
+  if (!group) return {};
+  return {
+    animation: false,
+    tooltip: { trigger: "axis" },
+    legend: { top: 0 },
+    grid: { left: 70, right: 70, top: 46, bottom: 80 },
+    xAxis: { type: "category", data: group.items.map((item) => item.category), axisLabel: { interval: 0, rotate: 35 } },
+    yAxis: [
+      { type: "value", name: "Count" },
+      { type: "value", name: "Cum %", min: 0, max: 100 }
+    ],
+    series: [
+      {
+        type: "bar",
+        name: "Count",
+        data: group.items.map((item) => item.count),
+        itemStyle: { color: "#2563eb" }
+      },
+      ...(showCumulative ? [{
+        type: "line" as const,
+        name: "Cumulative %",
+        yAxisIndex: 1,
+        data: group.items.map((item) => item.cumulative_percent),
+        itemStyle: { color: "#dc2626" },
+        lineStyle: { color: "#dc2626" }
+      }] : [])
     ] as SeriesOption[]
   };
 }
@@ -1531,6 +1564,86 @@ function ControlChartReport({
   );
 }
 
+function ParetoReport({
+  run,
+  menuOpen,
+  showCumulative,
+  onToggleMenu,
+  onToggleCumulative
+}: {
+  run: ParetoRun | null;
+  menuOpen: boolean;
+  showCumulative: boolean;
+  onToggleMenu: () => void;
+  onToggleCumulative: () => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!hostRef.current || !run) return;
+    if (chartRef.current) chartRef.current.dispose();
+    chartRef.current = echarts.init(hostRef.current);
+    const resize = () => chartRef.current?.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chartRef.current?.dispose();
+      chartRef.current = null;
+    };
+  }, [run]);
+
+  useEffect(() => {
+    if (!chartRef.current || !run) return;
+    chartRef.current.setOption(buildParetoOption(run, showCumulative), true);
+  }, [run, showCumulative]);
+
+  if (!run) {
+    return (
+      <section className="fit-y-report-window">
+        <p>Assign a cause column, then click Run.</p>
+      </section>
+    );
+  }
+
+  const result = run.outputs.pareto;
+  const group = result.groups[0];
+  return (
+    <section className="fit-y-report-window">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Pareto options">▶</button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onToggleCumulative}>{showCumulative ? "Hide Cumulative Percent" : "Show Cumulative Percent"}</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>Pareto Chart of {result.category}</h3>
+        <span>{group?.total.toFixed(0) ?? "0"} total, {result.missing.toFixed(0)} missing</span>
+      </div>
+      <div ref={hostRef} className="fit-y-chart control-chart-builder" />
+      {group ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Cause</th><th>Count</th><th>Percent</th><th>Cumulative %</th></tr></thead>
+            <tbody>
+              {group.items.map((item) => (
+                <tr key={item.category}>
+                  <td>{item.category}</td>
+                  <td>{item.count.toFixed(3)}</td>
+                  <td>{item.percent.toFixed(3)}</td>
+                  <td>{item.cumulative_percent.toFixed(3)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function FitModelReport({
   run,
   response,
@@ -1892,7 +2005,7 @@ export default function App() {
   const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -1911,6 +2024,12 @@ export default function App() {
   const [tabulateGroups, setTabulateGroups] = useState<string[]>([]);
   const [tabulateRun, setTabulateRun] = useState<TabulateRun | null>(null);
   const [tabulateMenuOpen, setTabulateMenuOpen] = useState(false);
+  const [paretoCategory, setParetoCategory] = useState<string | null>(null);
+  const [paretoCount, setParetoCount] = useState<string | null>(null);
+  const [paretoBy, setParetoBy] = useState<string | null>(null);
+  const [paretoRun, setParetoRun] = useState<ParetoRun | null>(null);
+  const [paretoMenuOpen, setParetoMenuOpen] = useState(false);
+  const [showParetoCumulative, setShowParetoCumulative] = useState(true);
   const [showTabulateCount, setShowTabulateCount] = useState(true);
   const [showTabulateMean, setShowTabulateMean] = useState(true);
   const [showTabulateStd, setShowTabulateStd] = useState(true);
@@ -1989,6 +2108,11 @@ export default function App() {
     setTabulateGroups([]);
     setTabulateRun(null);
     setTabulateMenuOpen(false);
+    setParetoCategory(null);
+    setParetoCount(null);
+    setParetoBy(null);
+    setParetoRun(null);
+    setParetoMenuOpen(false);
     setFitYResponse(null);
     setFitXFactor(null);
     setFitYByXRun(null);
@@ -2287,6 +2411,25 @@ export default function App() {
     setAnalyzeMenuOpen(false);
   }
 
+  async function handlePareto() {
+    if (!preview || !paretoCategory) {
+      setStatus("Pareto requires one cause/category column.");
+      return;
+    }
+    const result = await runPareto(preview.dataset.id, paretoCategory, { count: paretoCount, by: paretoBy });
+    setParetoRun(result);
+    setParetoMenuOpen(true);
+    setStatus(`Pareto ${result.id}: ${paretoCategory}${paretoBy ? ` by ${paretoBy}` : ""}.`);
+  }
+
+  function openParetoPlatform() {
+    if (!paretoCategory) {
+      setParetoCategory(groupingColumns.find((field) => !numericColumns.includes(field)) ?? groupingColumns[0] ?? null);
+    }
+    setActiveAnalyzePlatform("pareto");
+    setAnalyzeMenuOpen(false);
+  }
+
   async function handleMultivariate() {
     if (!preview) return;
     const columnsForRun = multivariateY.length > 1 ? multivariateY : numericColumns.slice(0, 4);
@@ -2462,7 +2605,7 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
@@ -2472,6 +2615,7 @@ export default function App() {
                 </button>
                 <button onClick={openFitYByXPlatform}>Fit Y by X</button>
                 <button onClick={openTabulatePlatform}>Tabulate</button>
+                <button onClick={openParetoPlatform}>Pareto</button>
                 <button className="primary" onClick={openFitModelPlatform}>
                   Fit Model
                 </button>
@@ -2494,7 +2638,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
         <span>{status}</span>
       </section>
 
@@ -2841,6 +2985,74 @@ export default function App() {
             onToggleMean={() => setShowTabulateMean((show) => !show)}
             onToggleStd={() => setShowTabulateStd((show) => !show)}
             onToggleRange={() => setShowTabulateRange((show) => !show)}
+          />
+        </section>
+      ) : activeAnalyzePlatform === "pareto" ? (
+        <section className="distribution-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Assign Roles</h3>
+              <DistributionRoleDrop
+                label="Cause"
+                values={paretoCategory ? [paretoCategory] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setParetoCategory(field)}
+                onRemove={() => setParetoCategory(null)}
+              />
+              <DistributionRoleDrop
+                label="Freq"
+                values={paretoCount ? [paretoCount] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setParetoCount(field)}
+                onRemove={() => setParetoCount(null)}
+              />
+              <DistributionRoleDrop
+                label="By"
+                values={paretoBy ? [paretoBy] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setParetoBy(field)}
+                onRemove={() => setParetoBy(null)}
+              />
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handlePareto}>Run</button>
+            <button onClick={() => {
+              setParetoCategory(null);
+              setParetoCount(null);
+              setParetoBy(null);
+              setParetoRun(null);
+              setParetoMenuOpen(false);
+            }}>
+              Remove
+            </button>
+            <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
+          </aside>
+
+          <ParetoReport
+            run={paretoRun}
+            menuOpen={paretoMenuOpen}
+            showCumulative={showParetoCumulative}
+            onToggleMenu={() => setParetoMenuOpen((open) => !open)}
+            onToggleCumulative={() => setShowParetoCumulative((show) => !show)}
           />
         </section>
       ) : activeAnalyzePlatform === "multivariate" ? (

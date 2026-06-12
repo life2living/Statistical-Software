@@ -557,6 +557,61 @@ def tabulate_summary(rows: list[dict[str, Any]], y_columns: list[str], group_col
     }
 
 
+def pareto_summary(
+    rows: list[dict[str, Any]],
+    category_column: str,
+    count_column: str | None = None,
+    by_column: str | None = None,
+) -> dict[str, Any]:
+    groups: dict[str, dict[str, float]] = {}
+    missing = 0
+    for row in rows:
+        category = row.get(category_column)
+        if category in {None, ""}:
+            missing += 1
+            continue
+        count = 1.0
+        if count_column:
+            raw_count = row.get(count_column)
+            if not is_numeric(raw_count) or float(raw_count) < 0:
+                missing += 1
+                continue
+            count = float(raw_count)
+        by_value = str(row.get(by_column) if by_column and row.get(by_column) is not None else "All")
+        groups.setdefault(by_value, {})
+        groups[by_value][str(category)] = groups[by_value].get(str(category), 0.0) + count
+
+    if not groups:
+        raise ValueError("Pareto analysis requires at least one nonmissing category.")
+
+    # Pareto rows use the public quality-control convention: descending counts plus cumulative percent.
+    output_groups = []
+    for group, counts in groups.items():
+        total = sum(counts.values())
+        cumulative = 0.0
+        items = []
+        for category, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
+            cumulative += count
+            items.append(
+                {
+                    "category": category,
+                    "count": count,
+                    "percent": 100 * count / total if total > 0 else 0.0,
+                    "cumulative_count": cumulative,
+                    "cumulative_percent": 100 * cumulative / total if total > 0 else 0.0,
+                }
+            )
+        output_groups.append({"group": group, "total": total, "items": items})
+
+    return {
+        "category": category_column,
+        "count": count_column,
+        "by": by_column,
+        "missing": float(missing),
+        "groups": output_groups,
+    }
+
+
 def distribution_group_summary(
     group_name: str,
     rows: list[dict[str, Any]],

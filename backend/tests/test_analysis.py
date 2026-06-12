@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits, tabulate_summary
+from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary
 
 
 ROWS = [
@@ -112,6 +112,34 @@ def test_control_chart_attribute_c_chart() -> None:
     assert result["chart_type"] == "c"
     assert round(result["attribute"]["center"], 6) == 3.333333
     assert len(result["attribute"]["points"]) == 3
+
+
+def test_pareto_summary_orders_counts_and_cumulative_percent() -> None:
+    rows = [
+        {"defect": "Scratch"},
+        {"defect": "Scratch"},
+        {"defect": "Dent"},
+        {"defect": "Color"},
+    ]
+    result = pareto_summary(rows, "defect")
+
+    items = result["groups"][0]["items"]
+    assert [item["category"] for item in items] == ["Scratch", "Color", "Dent"]
+    assert items[0]["count"] == 2.0
+    assert round(items[-1]["cumulative_percent"], 6) == 100.0
+
+
+def test_pareto_summary_supports_count_and_by_roles() -> None:
+    rows = [
+        {"line": "A", "defect": "Scratch", "count": 3.0},
+        {"line": "A", "defect": "Dent", "count": 1.0},
+        {"line": "B", "defect": "Dent", "count": 2.0},
+    ]
+    result = pareto_summary(rows, "defect", count_column="count", by_column="line")
+
+    assert len(result["groups"]) == 2
+    assert result["groups"][0]["total"] == 4.0
+    assert result["groups"][0]["items"][0]["category"] == "Scratch"
 
 
 def test_process_capability() -> None:

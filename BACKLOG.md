@@ -31,7 +31,8 @@
 - [x] Prediction Profiler mean-response confidence intervals.
 - [x] Fit Model richer profiler options, desirability, lock factors, and formula-column execution.
 - [x] Tabulate platform first slice for grouped summary tables.
-- [ ] Pareto, Gauge R&R, Variability Chart, and measurement system analysis.
+- [x] Pareto platform first slice with Freq, By, cumulative percent, and red-triangle toggle.
+- [ ] Gauge R&R, Variability Chart, and measurement system analysis.
 
 ## P2 Modeling And Quality Workflows
 

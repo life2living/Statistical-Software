@@ -100,6 +100,23 @@ export interface TabulateRun extends AnalysisRun {
   };
 }
 
+export interface ParetoRun extends AnalysisRun {
+  method: "pareto";
+  outputs: {
+    pareto: {
+      category: string;
+      count: string | null;
+      by: string | null;
+      missing: number;
+      groups: {
+        group: string;
+        total: number;
+        items: { category: string; count: number; percent: number; cumulative_count: number; cumulative_percent: number }[];
+      }[];
+    };
+  };
+}
+
 export interface FitYByXRun extends AnalysisRun {
   method: "fit_y_by_x";
   outputs: {

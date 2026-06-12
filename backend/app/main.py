@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits, tabulate_summary
+from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
@@ -194,6 +194,20 @@ def run_analysis(request: AnalysisRequest) -> AnalysisRun:
         result = tabulate_summary(rows, columns, group_columns)
         outputs = {"tabulate": result}
         interpretation = [f"Tabulated {len(columns)} numeric columns across {len(result['rows'])} groups."]
+    elif request.method == "pareto":
+        if not request.columns:
+            raise HTTPException(status_code=400, detail="Pareto requires a category column")
+        try:
+            result = pareto_summary(
+                rows,
+                category_column=request.columns[0],
+                count_column=request.parameters.get("count"),
+                by_column=request.parameters.get("by"),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        outputs = {"pareto": result}
+        interpretation = [f"Built Pareto chart for {result['category']} across {len(result['groups'])} group(s)."]
     elif request.method == "correlation":
         if len(request.columns) < 2:
             raise HTTPException(status_code=400, detail="Correlation requires two columns")
