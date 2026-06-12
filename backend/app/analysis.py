@@ -152,6 +152,101 @@ def control_chart_imr(
     }
 
 
+XBAR_R_CONSTANTS: dict[int, tuple[float, float, float]] = {
+    2: (1.88, 0.0, 3.267),
+    3: (1.023, 0.0, 2.574),
+    4: (0.729, 0.0, 2.282),
+    5: (0.577, 0.0, 2.114),
+    6: (0.483, 0.0, 2.004),
+    7: (0.419, 0.076, 1.924),
+    8: (0.373, 0.136, 1.864),
+    9: (0.337, 0.184, 1.816),
+    10: (0.308, 0.223, 1.777),
+}
+
+
+def control_chart_xbar_r(
+    rows: list[dict[str, Any]],
+    y_column: str,
+    subgroup_column: str,
+    phase_column: str | None = None,
+) -> dict[str, Any]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    missing = 0
+    for row_index, row in enumerate(rows):
+        value = row.get(y_column)
+        subgroup = row.get(subgroup_column)
+        if not is_numeric(value) or subgroup is None:
+            missing += 1
+            continue
+        label = str(subgroup)
+        grouped.setdefault(label, []).append(
+            {
+                "rowIndex": row_index,
+                "label": label,
+                "phase": str(row.get(phase_column) if phase_column and row.get(phase_column) is not None else "All"),
+                "value": float(value),
+            }
+        )
+
+    subgroup_rows = [items for _, items in grouped.items() if len(items) >= 2]
+    if not subgroup_rows:
+        raise ValueError("Xbar-R requires a subgroup column with at least one subgroup containing two or more numeric values.")
+
+    subgroup_sizes = [len(items) for items in subgroup_rows]
+    subgroup_size = min(max(round(mean(subgroup_sizes)), 2), 10)
+    a2, d3, d4 = XBAR_R_CONSTANTS[subgroup_size]
+
+    points: list[dict[str, Any]] = []
+    range_points: list[dict[str, Any]] = []
+    for items in subgroup_rows:
+        values = [item["value"] for item in items]
+        subgroup_mean = mean(values)
+        subgroup_range = max(values) - min(values)
+        representative = items[-1]
+        points.append({**representative, "value": subgroup_mean, "subgroupSize": float(len(items))})
+        range_points.append({**representative, "value": subgroup_range, "subgroupSize": float(len(items))})
+
+    xbarbar = mean(point["value"] for point in points)
+    rbar = mean(point["value"] for point in range_points)
+    xbar_ucl = xbarbar + a2 * rbar
+    xbar_lcl = xbarbar - a2 * rbar
+    r_ucl = d4 * rbar
+    r_lcl = d3 * rbar
+
+    xbar_points = [
+        {**point, "beyondLimits": point["value"] > xbar_ucl or point["value"] < xbar_lcl}
+        for point in points
+    ]
+    range_points = [
+        {**point, "beyondLimits": point["value"] > r_ucl or point["value"] < r_lcl}
+        for point in range_points
+    ]
+    violations = [
+        {"chart": "Xbar", "rule": "Subgroup mean beyond control limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
+        for point in xbar_points
+        if point["beyondLimits"]
+    ] + [
+        {"chart": "R", "rule": "Subgroup range beyond control limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
+        for point in range_points
+        if point["beyondLimits"]
+    ]
+
+    return {
+        "chart_type": "xbar_r",
+        "y": y_column,
+        "x": subgroup_column,
+        "phase": phase_column,
+        "n": float(sum(subgroup_sizes)),
+        "missing": float(missing),
+        "subgroup_count": float(len(points)),
+        "subgroup_size": float(subgroup_size),
+        "xbar": {"center": xbarbar, "ucl": xbar_ucl, "lcl": xbar_lcl, "points": xbar_points},
+        "range": {"center": rbar, "ucl": r_ucl, "lcl": r_lcl, "points": range_points},
+        "violations": violations,
+    }
+
+
 def process_capability(rows: list[dict[str, Any]], column: str, lsl: float | None, usl: float | None, target: float | None = None) -> dict[str, Any]:
     values = numeric_values(rows, column)
     if len(values) < 2:

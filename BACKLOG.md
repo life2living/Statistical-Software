@@ -21,7 +21,8 @@
 - [x] Multivariate correlations with p-value and covariance displays.
 - [x] Process capability with spec limits and capability indices.
 - [x] Control Chart Builder I-MR first slice with Y, subgroup/time, phase roles, limits, and rule-violation table.
-- [ ] Control Chart Builder Xbar-R, P/NP/C/U charts, extended rules, and full phase-limit recomputation.
+- [x] Control Chart Builder Xbar-R first slice with subgroup mean and range charts.
+- [ ] Control Chart Builder P/NP/C/U charts, extended rules, and full phase-limit recomputation.
 - [x] Fit Model ANOVA tables, term effects, parameter estimates, and residual diagnostics.
 - [x] Fit Model red triangle menu expansion with Factor Profiler toggle, AICc, and saved diagnostic columns.
 - [x] Fit Model effect leverage plots and prediction formula columns.

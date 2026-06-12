@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import control_chart_imr, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits, tabulate_summary
+from app.analysis import control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits, tabulate_summary
 
 
 ROWS = [
@@ -45,6 +45,24 @@ def test_control_chart_imr_flags_beyond_limits() -> None:
     result = control_chart_imr(rows, "x")
 
     assert any(violation["chart"] == "MR" for violation in result["violations"])
+
+
+def test_control_chart_xbar_r_returns_subgroup_limits() -> None:
+    rows = [
+        {"batch": "A", "x": 10.0},
+        {"batch": "A", "x": 12.0},
+        {"batch": "B", "x": 11.0},
+        {"batch": "B", "x": 13.0},
+        {"batch": "C", "x": 9.0},
+        {"batch": "C", "x": 11.0},
+    ]
+    result = control_chart_xbar_r(rows, "x", "batch")
+
+    assert result["chart_type"] == "xbar_r"
+    assert result["subgroup_count"] == 3.0
+    assert round(result["xbar"]["center"], 6) == 11.0
+    assert round(result["range"]["center"], 6) == 2.0
+    assert len(result["xbar"]["points"]) == 3
 
 
 def test_process_capability() -> None:

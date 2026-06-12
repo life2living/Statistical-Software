@@ -549,6 +549,12 @@ function buildMultivariateOption(run: MultivariateRun, showPValues: boolean, sho
 
 function buildControlChartOption(run: ControlChartRun): EChartsOption {
   const result = run.outputs.control_chart;
+  const primary = result.chart_type === "xbar_r" ? result.xbar : result.individuals;
+  const secondary = result.chart_type === "xbar_r" ? result.range : result.moving_range;
+  if (!primary || !secondary) return {};
+  const primaryName = result.chart_type === "xbar_r" ? "Xbar" : "Individuals";
+  const secondaryName = result.chart_type === "xbar_r" ? "Range" : "Moving Range";
+  const secondaryAxisName = result.chart_type === "xbar_r" ? "R" : "MR";
   return {
     animation: false,
     tooltip: { trigger: "axis" },
@@ -558,47 +564,47 @@ function buildControlChartOption(run: ControlChartRun): EChartsOption {
       { left: 70, right: 28, bottom: 50, height: "28%" }
     ],
     xAxis: [
-      { type: "category", data: result.individuals.points.map((point) => point.label), gridIndex: 0 },
-      { type: "category", data: result.moving_range.points.map((point) => point.label), gridIndex: 1 }
+      { type: "category", data: primary.points.map((point) => point.label), gridIndex: 0 },
+      { type: "category", data: secondary.points.map((point) => point.label), gridIndex: 1 }
     ],
     yAxis: [
       { type: "value", name: result.y, gridIndex: 0 },
-      { type: "value", name: "MR", gridIndex: 1 }
+      { type: "value", name: secondaryAxisName, gridIndex: 1 }
     ],
     dataZoom: [{ type: "inside", xAxisIndex: [0, 1] }, { type: "slider", xAxisIndex: [0, 1], height: 18, bottom: 16 }],
     series: [
       {
         type: "line",
-        name: "Individuals",
+        name: primaryName,
         xAxisIndex: 0,
         yAxisIndex: 0,
-        data: result.individuals.points.map((point) => ({
+        data: primary.points.map((point) => ({
           value: point.value,
           rowIndex: point.rowIndex,
           itemStyle: point.beyondLimits ? { color: "#dc2626", borderColor: "#7f1d1d", borderWidth: 2 } : undefined,
           symbolSize: point.beyondLimits ? 10 : 6
         })),
         markLine: { symbol: "none", data: [
-          { name: "UCL", yAxis: result.individuals.ucl, lineStyle: { color: "#dc2626" } },
-          { name: "CL", yAxis: result.individuals.center, lineStyle: { color: "#2563eb" } },
-          { name: "LCL", yAxis: result.individuals.lcl, lineStyle: { color: "#dc2626" } }
+          { name: "UCL", yAxis: primary.ucl, lineStyle: { color: "#dc2626" } },
+          { name: "CL", yAxis: primary.center, lineStyle: { color: "#2563eb" } },
+          { name: "LCL", yAxis: primary.lcl, lineStyle: { color: "#dc2626" } }
         ] }
       },
       {
         type: "line",
-        name: "Moving Range",
+        name: secondaryName,
         xAxisIndex: 1,
         yAxisIndex: 1,
-        data: result.moving_range.points.map((point) => ({
+        data: secondary.points.map((point) => ({
           value: point.value,
           rowIndex: point.rowIndex,
           itemStyle: point.beyondLimits ? { color: "#dc2626", borderColor: "#7f1d1d", borderWidth: 2 } : undefined,
           symbolSize: point.beyondLimits ? 10 : 6
         })),
         markLine: { symbol: "none", data: [
-          { name: "UCL", yAxis: result.moving_range.ucl, lineStyle: { color: "#dc2626" } },
-          { name: "MR", yAxis: result.moving_range.center, lineStyle: { color: "#2563eb" } },
-          { name: "LCL", yAxis: result.moving_range.lcl, lineStyle: { color: "#dc2626" } }
+          { name: "UCL", yAxis: secondary.ucl, lineStyle: { color: "#dc2626" } },
+          { name: secondaryAxisName, yAxis: secondary.center, lineStyle: { color: "#2563eb" } },
+          { name: "LCL", yAxis: secondary.lcl, lineStyle: { color: "#dc2626" } }
         ] }
       }
     ] as SeriesOption[]
@@ -1353,6 +1359,9 @@ function ControlChartReport({
   }
 
   const result = run.outputs.control_chart;
+  const primary = result.chart_type === "xbar_r" ? result.xbar : result.individuals;
+  const secondary = result.chart_type === "xbar_r" ? result.range : result.moving_range;
+  const title = result.chart_type === "xbar_r" ? "Xbar-R" : "I-MR";
   return (
     <section className="fit-y-report-window">
       <div className="distribution-card-header">
@@ -1366,16 +1375,18 @@ function ControlChartReport({
             </div>
           ) : null}
         </div>
-        <h3>I-MR Chart of {result.y}</h3>
-        <span>{result.n.toFixed(0)} points, {result.missing.toFixed(0)} missing</span>
+        <h3>{title} Chart of {result.y}</h3>
+        <span>{result.n.toFixed(0)} rows, {result.missing.toFixed(0)} missing{result.subgroup_count ? `, ${result.subgroup_count.toFixed(0)} subgroups` : ""}</span>
       </div>
       <div ref={hostRef} className="fit-y-chart control-chart-builder" />
-      <div className="fit-y-stats">
-        <span>I CL {result.individuals.center.toFixed(6)}</span>
-        <span>I UCL {result.individuals.ucl.toFixed(6)}</span>
-        <span>I LCL {result.individuals.lcl.toFixed(6)}</span>
-        <span>MR UCL {result.moving_range.ucl.toFixed(6)}</span>
-      </div>
+      {primary && secondary ? (
+        <div className="fit-y-stats">
+          <span>{result.chart_type === "xbar_r" ? "Xbar" : "I"} CL {primary.center.toFixed(6)}</span>
+          <span>{result.chart_type === "xbar_r" ? "Xbar" : "I"} UCL {primary.ucl.toFixed(6)}</span>
+          <span>{result.chart_type === "xbar_r" ? "Xbar" : "I"} LCL {primary.lcl.toFixed(6)}</span>
+          <span>{result.chart_type === "xbar_r" ? "R" : "MR"} UCL {secondary.ucl.toFixed(6)}</span>
+        </div>
+      ) : null}
       {showViolations ? (
         <div className="residual-table">
           <table>
@@ -1802,6 +1813,7 @@ export default function App() {
   const [controlChartY, setControlChartY] = useState<string | null>(null);
   const [controlChartX, setControlChartX] = useState<string | null>(null);
   const [controlChartPhase, setControlChartPhase] = useState<string | null>(null);
+  const [controlChartType, setControlChartType] = useState<"imr" | "xbar_r">("imr");
   const [controlChartRun, setControlChartRun] = useState<ControlChartRun | null>(null);
   const [controlChartMenuOpen, setControlChartMenuOpen] = useState(false);
   const [showControlChartViolations, setShowControlChartViolations] = useState(true);
@@ -1861,6 +1873,7 @@ export default function App() {
     setControlChartY(null);
     setControlChartX(null);
     setControlChartPhase(null);
+    setControlChartType("imr");
     setControlChartRun(null);
     setControlChartMenuOpen(false);
     setCapabilityY(null);
@@ -1914,6 +1927,7 @@ export default function App() {
 
   const columns = preview?.dataset.columns ?? [];
   const numericColumns = useMemo(() => columns.filter((column) => column.type === "numeric").map((column) => column.name), [columns]);
+  const groupingColumns = useMemo(() => columns.filter((column) => column.type !== "datetime").map((column) => column.name), [columns]);
   const visibleColumns = useMemo(
     () => columns.filter((column) => column.name.toLowerCase().includes(search.trim().toLowerCase())),
     [columns, search]
@@ -2208,11 +2222,12 @@ export default function App() {
     }
     const result = await runControlChart(preview.dataset.id, controlChartY, {
       x: controlChartX,
-      phase: controlChartPhase
+      phase: controlChartPhase,
+      chart_type: controlChartType
     });
     setControlChartRun(result);
     setControlChartMenuOpen(true);
-    setStatus(`Control Chart ${result.id}: I-MR chart of ${controlChartY}.`);
+    setStatus(`Control Chart ${result.id}: ${controlChartType === "xbar_r" ? "Xbar-R" : "I-MR"} chart of ${controlChartY}.`);
   }
 
   function openControlChartPlatform() {
@@ -2833,6 +2848,19 @@ export default function App() {
           <section className="distribution-dialog">
             <div className="role-box">
               <h3>Control Chart Builder</h3>
+              <label className="model-personality">
+                Chart
+                <select value={controlChartType} onChange={(event) => {
+                  const nextType = event.target.value as "imr" | "xbar_r";
+                  setControlChartType(nextType);
+                  if (nextType === "xbar_r") {
+                    setControlChartX((current) => groupingColumns.find((column) => column.toLowerCase().includes("batch") && column !== controlChartY) ?? groupingColumns.find((column) => column !== controlChartY && column !== current) ?? current);
+                  }
+                }}>
+                  <option value="imr">I-MR</option>
+                  <option value="xbar_r">Xbar-R</option>
+                </select>
+              </label>
               <DistributionRoleDrop
                 label="Y"
                 values={controlChartY ? [controlChartY] : []}
@@ -2870,6 +2898,7 @@ export default function App() {
               setControlChartY(null);
               setControlChartX(null);
               setControlChartPhase(null);
+              setControlChartType("imr");
               setControlChartRun(null);
             }}>
               Remove
