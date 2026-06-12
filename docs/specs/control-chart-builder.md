@@ -8,11 +8,12 @@ Related fixed chart entries are also available under `Analyze > Quality and Proc
 
 ## StatFlow Scope
 
-The clean-room Control Chart Builder implements I-MR and Xbar-R first slices:
+The clean-room Control Chart Builder implements I-MR, Xbar-R, and attribute-chart first slices:
 
-- Roles: Y, Subgroup/Time, Phase.
+- Roles: Y, Subgroup/Time, Sample Size, Phase.
 - Output: Individuals chart and Moving Range chart in one panel.
 - Xbar-R output: subgroup mean chart and subgroup range chart in one panel.
+- P/NP/C/U output: attribute chart with per-point limits where sample sizes vary.
 - Red triangle menu: show/hide rule violations.
 - Rule coverage: points beyond displayed 3-sigma limits.
 - Phase is captured as a role in the API and output points; full per-phase limit recomputation is left for the next slice.
@@ -40,6 +41,7 @@ Returns `outputs.control_chart`:
 - `moving_range`: MR-bar, UCL, LCL, plotted moving ranges
 - `xbar`: Xbar-bar, UCL, LCL, subgroup mean points when `chart_type=xbar_r`
 - `range`: R-bar, UCL, LCL, subgroup range points when `chart_type=xbar_r`
+- `attribute`: center and plotted points with point-level UCL/LCL when `chart_type` is `p`, `np`, `c`, or `u`
 - `violations`: displayed rule violations
 
 ## Math
@@ -58,3 +60,10 @@ Xbar-R limits use public subgroup constants:
 - `Rbar = mean(subgroup ranges)`
 - `Xbar UCL/LCL = Xbarbar +/- A2 * Rbar`
 - `R UCL = D4 * Rbar`; `R LCL = D3 * Rbar`
+
+Attribute chart limits use public binomial/Poisson approximations:
+
+- P chart: `p_i = d_i / n_i`, `pbar = sum(d) / sum(n)`, limits `pbar +/- 3 * sqrt(pbar(1-pbar)/n_i)`
+- NP chart: plotted `d_i`, limits use `n_i * pbar +/- 3 * sqrt(n_i*pbar(1-pbar))`
+- C chart: plotted defect count, limits `cbar +/- 3 * sqrt(cbar)`
+- U chart: `u_i = c_i / n_i`, `ubar = sum(c) / sum(n)`, limits `ubar +/- 3 * sqrt(ubar/n_i)`

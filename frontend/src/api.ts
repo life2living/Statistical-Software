@@ -121,7 +121,7 @@ export function runSpc(datasetId: string, column: string): Promise<AnalysisRun> 
 export function runControlChart(
   datasetId: string,
   y: string,
-  roles: { x?: string | null; phase?: string | null; chart_type?: "imr" | "xbar_r" }
+  roles: { x?: string | null; phase?: string | null; sample_size?: string | null; chart_type?: "imr" | "xbar_r" | "p" | "np" | "c" | "u" }
 ): Promise<ControlChartRun> {
   return request<ControlChartRun>("/analysis/run", {
     method: "POST",

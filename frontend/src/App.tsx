@@ -46,6 +46,14 @@ const chartLabels: Record<ChartType, string> = {
   control: "Control"
 };
 
+type ControlChartType = "imr" | "xbar_r" | "p" | "np" | "c" | "u";
+
+function controlChartLabel(chartType: ControlChartType) {
+  if (chartType === "imr") return "I-MR";
+  if (chartType === "xbar_r") return "Xbar-R";
+  return chartType.toUpperCase();
+}
+
 function first(values: string[]) {
   return values[0] ?? null;
 }
@@ -549,6 +557,46 @@ function buildMultivariateOption(run: MultivariateRun, showPValues: boolean, sho
 
 function buildControlChartOption(run: ControlChartRun): EChartsOption {
   const result = run.outputs.control_chart;
+  if (result.attribute) {
+    return {
+      animation: false,
+      tooltip: { trigger: "axis" },
+      legend: { top: 0 },
+      grid: { left: 70, right: 28, top: 46, bottom: 58 },
+      xAxis: { type: "category", data: result.attribute.points.map((point) => point.label) },
+      yAxis: { type: "value", name: result.chart_type.toUpperCase() },
+      dataZoom: [{ type: "inside" }, { type: "slider", height: 18, bottom: 18 }],
+      series: [
+        {
+          type: "line",
+          name: result.chart_type.toUpperCase(),
+          data: result.attribute.points.map((point) => ({
+            value: point.value,
+            rowIndex: point.rowIndex,
+            itemStyle: point.beyondLimits ? { color: "#dc2626", borderColor: "#7f1d1d", borderWidth: 2 } : undefined,
+            symbolSize: point.beyondLimits ? 10 : 6
+          })),
+          markLine: { symbol: "none", data: [
+            { name: "CL", yAxis: result.attribute.center, lineStyle: { color: "#2563eb" } }
+          ] }
+        },
+        {
+          type: "line",
+          name: "UCL",
+          symbol: "none",
+          lineStyle: { color: "#dc2626", type: "dashed" },
+          data: result.attribute.points.map((point) => point.ucl)
+        },
+        {
+          type: "line",
+          name: "LCL",
+          symbol: "none",
+          lineStyle: { color: "#dc2626", type: "dashed" },
+          data: result.attribute.points.map((point) => point.lcl)
+        }
+      ] as SeriesOption[]
+    };
+  }
   const primary = result.chart_type === "xbar_r" ? result.xbar : result.individuals;
   const secondary = result.chart_type === "xbar_r" ? result.range : result.moving_range;
   if (!primary || !secondary) return {};
@@ -1361,7 +1409,7 @@ function ControlChartReport({
   const result = run.outputs.control_chart;
   const primary = result.chart_type === "xbar_r" ? result.xbar : result.individuals;
   const secondary = result.chart_type === "xbar_r" ? result.range : result.moving_range;
-  const title = result.chart_type === "xbar_r" ? "Xbar-R" : "I-MR";
+  const title = controlChartLabel(result.chart_type);
   return (
     <section className="fit-y-report-window">
       <div className="distribution-card-header">
@@ -1379,7 +1427,13 @@ function ControlChartReport({
         <span>{result.n.toFixed(0)} rows, {result.missing.toFixed(0)} missing{result.subgroup_count ? `, ${result.subgroup_count.toFixed(0)} subgroups` : ""}</span>
       </div>
       <div ref={hostRef} className="fit-y-chart control-chart-builder" />
-      {primary && secondary ? (
+      {result.attribute ? (
+        <div className="fit-y-stats">
+          <span>CL {result.attribute.center.toFixed(6)}</span>
+          <span>Points {result.attribute.points.length.toFixed(0)}</span>
+          <span>Sample Size {result.sample_size ?? "-"}</span>
+        </div>
+      ) : primary && secondary ? (
         <div className="fit-y-stats">
           <span>{result.chart_type === "xbar_r" ? "Xbar" : "I"} CL {primary.center.toFixed(6)}</span>
           <span>{result.chart_type === "xbar_r" ? "Xbar" : "I"} UCL {primary.ucl.toFixed(6)}</span>
@@ -1813,7 +1867,8 @@ export default function App() {
   const [controlChartY, setControlChartY] = useState<string | null>(null);
   const [controlChartX, setControlChartX] = useState<string | null>(null);
   const [controlChartPhase, setControlChartPhase] = useState<string | null>(null);
-  const [controlChartType, setControlChartType] = useState<"imr" | "xbar_r">("imr");
+  const [controlChartSampleSize, setControlChartSampleSize] = useState<string | null>(null);
+  const [controlChartType, setControlChartType] = useState<ControlChartType>("imr");
   const [controlChartRun, setControlChartRun] = useState<ControlChartRun | null>(null);
   const [controlChartMenuOpen, setControlChartMenuOpen] = useState(false);
   const [showControlChartViolations, setShowControlChartViolations] = useState(true);
@@ -1873,6 +1928,7 @@ export default function App() {
     setControlChartY(null);
     setControlChartX(null);
     setControlChartPhase(null);
+    setControlChartSampleSize(null);
     setControlChartType("imr");
     setControlChartRun(null);
     setControlChartMenuOpen(false);
@@ -2223,11 +2279,12 @@ export default function App() {
     const result = await runControlChart(preview.dataset.id, controlChartY, {
       x: controlChartX,
       phase: controlChartPhase,
+      sample_size: controlChartSampleSize,
       chart_type: controlChartType
     });
     setControlChartRun(result);
     setControlChartMenuOpen(true);
-    setStatus(`Control Chart ${result.id}: ${controlChartType === "xbar_r" ? "Xbar-R" : "I-MR"} chart of ${controlChartY}.`);
+    setStatus(`Control Chart ${result.id}: ${controlChartLabel(controlChartType)} chart of ${controlChartY}.`);
   }
 
   function openControlChartPlatform() {
@@ -2851,14 +2908,21 @@ export default function App() {
               <label className="model-personality">
                 Chart
                 <select value={controlChartType} onChange={(event) => {
-                  const nextType = event.target.value as "imr" | "xbar_r";
+                  const nextType = event.target.value as ControlChartType;
                   setControlChartType(nextType);
                   if (nextType === "xbar_r") {
                     setControlChartX((current) => groupingColumns.find((column) => column.toLowerCase().includes("batch") && column !== controlChartY) ?? groupingColumns.find((column) => column !== controlChartY && column !== current) ?? current);
                   }
+                  if (["p", "np", "u"].includes(nextType)) {
+                    setControlChartSampleSize((current) => current ?? numericColumns.find((column) => column !== controlChartY) ?? null);
+                  }
                 }}>
                   <option value="imr">I-MR</option>
                   <option value="xbar_r">Xbar-R</option>
+                  <option value="p">P</option>
+                  <option value="np">NP</option>
+                  <option value="c">C</option>
+                  <option value="u">U</option>
                 </select>
               </label>
               <DistributionRoleDrop
@@ -2880,6 +2944,15 @@ export default function App() {
                 onRemove={() => setControlChartX(null)}
               />
               <DistributionRoleDrop
+                label="Sample Size"
+                values={controlChartSampleSize ? [controlChartSampleSize] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setControlChartSampleSize(field)}
+                onRemove={() => setControlChartSampleSize(null)}
+              />
+              <DistributionRoleDrop
                 label="Phase"
                 values={controlChartPhase ? [controlChartPhase] : []}
                 multiple={false}
@@ -2898,6 +2971,7 @@ export default function App() {
               setControlChartY(null);
               setControlChartX(null);
               setControlChartPhase(null);
+              setControlChartSampleSize(null);
               setControlChartType("imr");
               setControlChartRun(null);
             }}>

@@ -196,10 +196,11 @@ export interface ControlChartRun extends AnalysisRun {
   method: "control_chart";
   outputs: {
     control_chart: {
-      chart_type: "imr" | "xbar_r";
+      chart_type: "imr" | "xbar_r" | "p" | "np" | "c" | "u";
       y: string;
       x: string | null;
       phase: string | null;
+      sample_size?: string | null;
       n: number;
       missing: number;
       subgroup_count?: number;
@@ -227,6 +228,10 @@ export interface ControlChartRun extends AnalysisRun {
         ucl: number;
         lcl: number;
         points: { rowIndex: number; label: string; phase: string; value: number; subgroupSize: number; beyondLimits: boolean }[];
+      };
+      attribute?: {
+        center: number;
+        points: { rowIndex: number; label: string; phase: string; value: number; count: number; sampleSize: number; ucl: number; lcl: number; beyondLimits: boolean }[];
       };
       violations: { chart: string; rule: string; rowIndex: number; label: string; value: number }[];
     };

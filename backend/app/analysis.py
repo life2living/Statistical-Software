@@ -247,6 +247,104 @@ def control_chart_xbar_r(
     }
 
 
+def control_chart_attribute(
+    rows: list[dict[str, Any]],
+    y_column: str,
+    chart_type: str,
+    x_column: str | None = None,
+    sample_size_column: str | None = None,
+    phase_column: str | None = None,
+) -> dict[str, Any]:
+    points: list[dict[str, Any]] = []
+    missing = 0
+    total_count = 0.0
+    total_size = 0.0
+    for row_index, row in enumerate(rows):
+        count = row.get(y_column)
+        if not is_numeric(count) or float(count) < 0:
+            missing += 1
+            continue
+        size = 1.0
+        if chart_type in {"p", "np", "u"}:
+            sample_size = row.get(sample_size_column) if sample_size_column else None
+            if not is_numeric(sample_size) or float(sample_size) <= 0:
+                missing += 1
+                continue
+            size = float(sample_size)
+        count_value = float(count)
+        if chart_type in {"p", "np"} and count_value > size:
+            missing += 1
+            continue
+        value = count_value / size if chart_type in {"p", "u"} else count_value
+        total_count += count_value
+        total_size += size
+        points.append(
+            {
+                "rowIndex": row_index,
+                "label": str(row.get(x_column) if x_column else len(points) + 1),
+                "phase": str(row.get(phase_column) if phase_column and row.get(phase_column) is not None else "All"),
+                "value": value,
+                "count": count_value,
+                "sampleSize": size,
+            }
+        )
+
+    if not points:
+        raise ValueError("Attribute control chart requires at least one valid nonnegative count.")
+
+    # Attribute chart limits follow public NIST e-Handbook SPC guidance:
+    # binomial p/np charts and Poisson c/u charts with 3-sigma limits.
+    if chart_type == "p":
+        center = total_count / total_size
+    elif chart_type == "np":
+        center = total_count / len(points)
+        pbar = total_count / total_size
+    elif chart_type == "u":
+        center = total_count / total_size
+    else:
+        center = total_count / len(points)
+
+    plotted_points: list[dict[str, Any]] = []
+    for point in points:
+        sample_size = point["sampleSize"]
+        if chart_type == "p":
+            sigma = sqrt(max(0.0, center * (1 - center) / sample_size))
+            ucl = min(1.0, center + 3 * sigma)
+            lcl = max(0.0, center - 3 * sigma)
+        elif chart_type == "np":
+            sigma = sqrt(max(0.0, sample_size * pbar * (1 - pbar)))
+            expected = sample_size * pbar
+            ucl = expected + 3 * sigma
+            lcl = max(0.0, expected - 3 * sigma)
+        elif chart_type == "u":
+            sigma = sqrt(max(0.0, center / sample_size))
+            ucl = center + 3 * sigma
+            lcl = max(0.0, center - 3 * sigma)
+        else:
+            sigma = sqrt(max(0.0, center))
+            ucl = center + 3 * sigma
+            lcl = max(0.0, center - 3 * sigma)
+        plotted_points.append({**point, "ucl": ucl, "lcl": lcl, "beyondLimits": point["value"] > ucl or point["value"] < lcl})
+
+    chart_name = chart_type.upper() if chart_type != "u" else "U"
+    violations = [
+        {"chart": chart_name, "rule": "Point beyond attribute control limits", "rowIndex": point["rowIndex"], "label": point["label"], "value": point["value"]}
+        for point in plotted_points
+        if point["beyondLimits"]
+    ]
+    return {
+        "chart_type": chart_type,
+        "y": y_column,
+        "x": x_column,
+        "phase": phase_column,
+        "sample_size": sample_size_column,
+        "n": float(len(plotted_points)),
+        "missing": float(missing),
+        "attribute": {"center": center, "points": plotted_points},
+        "violations": violations,
+    }
+
+
 def process_capability(rows: list[dict[str, Any]], column: str, lsl: float | None, usl: float | None, target: float | None = None) -> dict[str, Any]:
     values = numeric_values(rows, column)
     if len(values) < 2:

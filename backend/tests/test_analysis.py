@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits, tabulate_summary
+from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, process_capability, spc_control_limits, tabulate_summary
 
 
 ROWS = [
@@ -63,6 +63,31 @@ def test_control_chart_xbar_r_returns_subgroup_limits() -> None:
     assert round(result["xbar"]["center"], 6) == 11.0
     assert round(result["range"]["center"], 6) == 2.0
     assert len(result["xbar"]["points"]) == 3
+
+
+def test_control_chart_attribute_p_and_u_limits() -> None:
+    rows = [
+        {"lot": "A", "defective": 2.0, "sample": 100.0, "defects": 5.0},
+        {"lot": "B", "defective": 4.0, "sample": 100.0, "defects": 6.0},
+        {"lot": "C", "defective": 3.0, "sample": 100.0, "defects": 4.0},
+    ]
+    p_chart = control_chart_attribute(rows, "defective", "p", x_column="lot", sample_size_column="sample")
+    u_chart = control_chart_attribute(rows, "defects", "u", x_column="lot", sample_size_column="sample")
+
+    assert p_chart["chart_type"] == "p"
+    assert round(p_chart["attribute"]["center"], 6) == 0.03
+    assert p_chart["attribute"]["points"][0]["ucl"] <= 1.0
+    assert u_chart["chart_type"] == "u"
+    assert round(u_chart["attribute"]["center"], 6) == 0.05
+
+
+def test_control_chart_attribute_c_chart() -> None:
+    rows = [{"unit": "A", "defects": 2.0}, {"unit": "B", "defects": 5.0}, {"unit": "C", "defects": 3.0}]
+    result = control_chart_attribute(rows, "defects", "c", x_column="unit")
+
+    assert result["chart_type"] == "c"
+    assert round(result["attribute"]["center"], 6) == 3.333333
+    assert len(result["attribute"]["points"]) == 3
 
 
 def test_process_capability() -> None:
