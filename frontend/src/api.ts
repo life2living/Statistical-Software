@@ -181,14 +181,20 @@ export function runProcessCapability(
   });
 }
 
-export function runLinearModel(datasetId: string, target: string, feature: string): Promise<ModelRun> {
+export function listLinearModelRuns(datasetId?: string): Promise<ModelRun[]> {
+  const query = datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}&model_type=linear_regression` : "?model_type=linear_regression";
+  return request<ModelRun[]>(`/models/runs${query}`);
+}
+
+export function runLinearModel(datasetId: string, target: string, feature: string, validationFraction = 0.2): Promise<ModelRun> {
   return request<ModelRun>("/models/run", {
     method: "POST",
     body: JSON.stringify({
       dataset_id: datasetId,
       model_type: "linear_regression",
       target,
-      features: [feature]
+      features: [feature],
+      parameters: { validation_fraction: validationFraction }
     })
   });
 }

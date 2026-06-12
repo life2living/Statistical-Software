@@ -199,12 +199,14 @@ def list_analysis_runs(dataset_id: str | None = None, tenant_id: str = Depends(c
 
 
 @app.get("/models/runs")
-def list_model_runs(dataset_id: str | None = None, tenant_id: str = Depends(current_tenant_id)):
+def list_model_runs(dataset_id: str | None = None, model_type: str | None = None, tenant_id: str = Depends(current_tenant_id)):
     if dataset_id:
         get_dataset_for_tenant(dataset_id, tenant_id)
     runs = [run for run in store.model_runs.values() if dataset_belongs_to_tenant(run.dataset_id, tenant_id)]
     if dataset_id:
         runs = [run for run in runs if run.dataset_id == dataset_id]
+    if model_type:
+        runs = [run for run in runs if run.model_type == model_type]
     return runs
 
 
@@ -395,7 +397,12 @@ def run_model(request: ModelRequest, tenant_id: str = Depends(current_tenant_id)
     if request.model_type != "linear_regression":
         raise HTTPException(status_code=400, detail="Only linear_regression is implemented in the MVP")
 
-    result = linear_regression(store.rows[request.dataset_id], request.target, request.features)
+    result = linear_regression(
+        store.rows[request.dataset_id],
+        request.target,
+        request.features,
+        validation_fraction=float(request.parameters.get("validation_fraction", 0.0) or 0.0),
+    )
     run = ModelRun(
         id=new_id("mdl"),
         dataset_id=dataset.id,

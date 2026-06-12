@@ -322,10 +322,15 @@ export interface ProcessCapabilityRun extends AnalysisRun {
 
 export interface ModelRun {
   id: string;
+  dataset_id: string;
+  dataset_version: number;
+  model_type: "linear_regression";
   target: string;
   features: string[];
   metrics: Record<string, number>;
   coefficients: Record<string, number>;
+  predictions: { actual: number; predicted: number; feature?: number; split?: "train" | "validation" }[];
+  status: "completed" | "failed";
 }
 
 export interface ProfilerEffect {

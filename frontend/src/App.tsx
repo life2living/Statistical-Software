@@ -1,7 +1,7 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, optimizeFitModelProfiler, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
+import { importDataset, listDatasets, listLinearModelRuns, optimizeFitModelProfiler, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
 import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun, VariabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
@@ -2243,6 +2243,48 @@ function CapabilityReport({
   );
 }
 
+function metricCell(value: number | undefined) {
+  return typeof value === "number" ? value.toFixed(4) : "-";
+}
+
+function ModelComparisonTable({ runs, activeRunId }: { runs: ModelRun[]; activeRunId?: string }) {
+  if (runs.length === 0) {
+    return <p>Linear model output appears here.</p>;
+  }
+  return (
+    <div className="model-comparison">
+      <table>
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Y</th>
+            <th>X</th>
+            <th>Train R2</th>
+            <th>Train RMSE</th>
+            <th>Validation R2</th>
+            <th>Validation RMSE</th>
+            <th>Validation N</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.slice(-8).reverse().map((run) => (
+            <tr key={run.id} className={run.id === activeRunId ? "active-model-run" : undefined}>
+              <td>{run.id}</td>
+              <td>{run.target}</td>
+              <td>{run.features.join(", ")}</td>
+              <td>{metricCell(run.metrics.train_r2 ?? run.metrics.r2)}</td>
+              <td>{metricCell(run.metrics.train_rmse ?? run.metrics.rmse)}</td>
+              <td>{run.metrics.validation_n > 0 ? metricCell(run.metrics.validation_r2) : "-"}</td>
+              <td>{run.metrics.validation_n > 0 ? metricCell(run.metrics.validation_rmse) : "-"}</td>
+              <td>{metricCell(run.metrics.validation_n)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function App() {
   const chartRef = useRef<HTMLDivElement>(null);
   const profilerRef = useRef<HTMLDivElement>(null);
@@ -2257,6 +2299,7 @@ export default function App() {
   const [status, setStatus] = useState("Loading sample industrial dataset...");
   const [analysis, setAnalysis] = useState<AnalysisRun | null>(null);
   const [model, setModel] = useState<ModelRun | null>(null);
+  const [modelRuns, setModelRuns] = useState<ModelRun[]>([]);
   const [fitResponses, setFitResponses] = useState<string[]>([]);
   const [fitEffects, setFitEffects] = useState<string[]>([]);
   const [includeQuadratic, setIncludeQuadratic] = useState(false);
@@ -2356,7 +2399,9 @@ export default function App() {
 
   async function loadDataset(datasetId: string) {
     const datasetPreview = await previewDataset(datasetId);
+    const linearRuns = await listLinearModelRuns(datasetId);
     setPreview(datasetPreview);
+    setModelRuns(linearRuns);
     const numeric = datasetPreview.dataset.columns.find((column) => column.type === "numeric")?.name;
     setZones({ ...emptyZones, x: datasetPreview.dataset.timestamp_column ? [datasetPreview.dataset.timestamp_column] : [], y: numeric ? [numeric] : [] });
     setChartType(datasetPreview.dataset.timestamp_column && numeric ? "line" : "scatter");
@@ -2519,6 +2564,7 @@ export default function App() {
     const datasetPreview = await importDataset(file);
     setPreview(datasetPreview);
     setDatasets(await listDatasets());
+    setModelRuns(await listLinearModelRuns(datasetPreview.dataset.id));
     const numeric = datasetPreview.dataset.columns.find((column) => column.type === "numeric")?.name;
     setZones({ ...emptyZones, x: datasetPreview.dataset.timestamp_column ? [datasetPreview.dataset.timestamp_column] : [], y: numeric ? [numeric] : [] });
     setChartType(datasetPreview.dataset.timestamp_column && numeric ? "line" : "histogram");
@@ -2619,7 +2665,8 @@ export default function App() {
     if (!feature) return;
     const result = await runLinearModel(preview.dataset.id, target, feature);
     setModel(result);
-    setStatus(`Trained ${result.id}: ${target} from ${feature}.`);
+    setModelRuns(await listLinearModelRuns(preview.dataset.id));
+    setStatus(`Trained ${result.id}: ${target} from ${feature} with ${(result.metrics.validation_fraction * 100).toFixed(0)}% validation holdout.`);
   }
 
   function toggleSelection(value: string, selected: string[], setter: (values: string[]) => void) {
@@ -3944,7 +3991,7 @@ export default function App() {
             </section>
             <section>
               <h3>Model Output</h3>
-              {model ? <pre>{JSON.stringify({ metrics: model.metrics, coefficients: model.coefficients }, null, 2)}</pre> : <p>Linear model output appears here.</p>}
+              <ModelComparisonTable runs={modelRuns} activeRunId={model?.id} />
             </section>
           </div>
           {preview ? <DataPreviewTable preview={preview} selectedRows={selectedRows} onToggleRow={toggleRowSelection} /> : null}

@@ -1239,19 +1239,7 @@ def numeric_pairs(rows: list[dict[str, Any]], left_column: str, right_column: st
     ]
 
 
-def linear_regression(rows: list[dict[str, Any]], target: str, features: list[str]) -> dict[str, Any]:
-    if len(features) != 1:
-        raise ValueError("MVP linear regression supports exactly one feature.")
-
-    feature = features[0]
-    pairs = [
-        (float(row[feature]), float(row[target]))
-        for row in rows
-        if isinstance(row.get(feature), int | float) and isinstance(row.get(target), int | float)
-    ]
-    if len(pairs) < 2:
-        raise ValueError("At least two numeric rows are required.")
-
+def regression_fit(pairs: list[tuple[float, float]]) -> tuple[float, float]:
     xs = [pair[0] for pair in pairs]
     ys = [pair[1] for pair in pairs]
     x_mean = mean(xs)
@@ -1259,15 +1247,66 @@ def linear_regression(rows: list[dict[str, Any]], target: str, features: list[st
     denominator = sum((x - x_mean) ** 2 for x in xs)
     slope = 0.0 if denominator == 0 else sum((x - x_mean) * (y - y_mean) for x, y in pairs) / denominator
     intercept = y_mean - slope * x_mean
-    predictions = [{"actual": y, "predicted": intercept + slope * x} for x, y in pairs]
+    return intercept, slope
+
+
+def regression_evaluation(pairs: list[tuple[float, float]], intercept: float, slope: float, split: str) -> tuple[dict[str, float], list[dict[str, Any]]]:
+    predictions = [{"actual": y, "predicted": intercept + slope * x, "feature": x, "split": split} for x, y in pairs]
+    if not predictions:
+        return {"r2": 0.0, "rmse": 0.0, "n": 0.0}, predictions
+    ys = [pair[1] for pair in pairs]
+    y_mean = mean(ys)
     sse = sum((row["actual"] - row["predicted"]) ** 2 for row in predictions)
     sst = sum((y - y_mean) ** 2 for y in ys)
     r2 = 0.0 if sst == 0 else 1 - sse / sst
     rmse = sqrt(sse / len(predictions))
+    return {"r2": r2, "rmse": rmse, "n": float(len(predictions))}, predictions
+
+
+def split_regression_pairs(pairs: list[tuple[float, float]], validation_fraction: float) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    if validation_fraction <= 0 or len(pairs) < 3:
+        return pairs, []
+    fraction = min(max(validation_fraction, 0.0), 0.8)
+    validation_count = min(max(1, round(len(pairs) * fraction)), len(pairs) - 2)
+    return pairs[:-validation_count], pairs[-validation_count:]
+
+
+def linear_regression(rows: list[dict[str, Any]], target: str, features: list[str], validation_fraction: float = 0.0) -> dict[str, Any]:
+    if len(features) != 1:
+        raise ValueError("MVP linear regression supports exactly one feature.")
+
+    feature = features[0]
+    pairs = [
+        (float(row[feature]), float(row[target]))
+        for row in rows
+        if is_numeric(row.get(feature)) and is_numeric(row.get(target))
+    ]
+    if len(pairs) < 2:
+        raise ValueError("At least two numeric rows are required.")
+
+    train_pairs, validation_pairs = split_regression_pairs(pairs, validation_fraction)
+    if len(train_pairs) < 2:
+        raise ValueError("At least two training rows are required after validation split.")
+
+    # Ordinary least-squares simple regression follows the public NIST/SciPy least-squares formulas.
+    intercept, slope = regression_fit(train_pairs)
+    train_metrics, train_predictions = regression_evaluation(train_pairs, intercept, slope, "train")
+    validation_metrics, validation_predictions = regression_evaluation(validation_pairs, intercept, slope, "validation")
     return {
         "coefficients": {"intercept": intercept, feature: slope},
-        "metrics": {"r2": r2, "rmse": rmse, "n": float(len(predictions))},
-        "predictions": predictions[:50],
+        "metrics": {
+            "r2": train_metrics["r2"],
+            "rmse": train_metrics["rmse"],
+            "n": train_metrics["n"],
+            "train_r2": train_metrics["r2"],
+            "train_rmse": train_metrics["rmse"],
+            "train_n": train_metrics["n"],
+            "validation_r2": validation_metrics["r2"],
+            "validation_rmse": validation_metrics["rmse"],
+            "validation_n": validation_metrics["n"],
+            "validation_fraction": float(validation_fraction),
+        },
+        "predictions": [*train_predictions[:40], *validation_predictions[:10]],
     }
 
 

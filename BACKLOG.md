@@ -39,7 +39,7 @@
 ## P2 Modeling And Quality Workflows
 
 - [x] Prediction Profiler refinements: desirability and lock factors.
-- [ ] Model comparison and validation splits.
+- [x] Model comparison and validation splits.
 - [ ] DOE import/generation workflow.
 - [ ] Reliability/survival first slice.
 - [ ] Process screening across many variables.

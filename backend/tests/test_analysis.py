@@ -228,6 +228,16 @@ def test_linear_regression_one_feature() -> None:
     assert round(result["metrics"]["r2"], 6) == 1.0
 
 
+def test_linear_regression_validation_split_reports_holdout_metrics() -> None:
+    rows = [{"x": float(index), "y": float(index * 2 + (10 if index >= 5 else 0))} for index in range(1, 7)]
+    result = linear_regression(rows, "y", ["x"], validation_fraction=0.33)
+
+    assert result["metrics"]["train_n"] == 4.0
+    assert result["metrics"]["validation_n"] == 2.0
+    assert result["metrics"]["validation_rmse"] > 0
+    assert {prediction["split"] for prediction in result["predictions"]} == {"train", "validation"}
+
+
 def test_fit_standard_least_squares_profiler() -> None:
     result = fit_standard_least_squares(ROWS, responses=["y"], effects=["x"])
     assert round(result["coefficients"]["y"]["x"], 6) == 2.0

@@ -1074,6 +1074,35 @@ input {
   margin-top: 12px;
 }
 
+.model-comparison {
+  max-height: 260px;
+  overflow: auto;
+}
+
+.model-comparison table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+
+.model-comparison th,
+.model-comparison td {
+  border-bottom: 1px solid #dbe3ef;
+  padding: 6px 7px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.model-comparison th {
+  background: #f8fafc;
+  color: #334155;
+}
+
+.model-comparison .active-model-run {
+  background: #fff7ed;
+  outline: 1px solid #fb923c;
+}
+
 .fit-summary-grid {
   display: grid;
   gap: 6px;
