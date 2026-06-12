@@ -10,7 +10,7 @@
 - [x] Linked brushing between data table and active graphs.
 - [x] Launch dialogs with role boxes for Distribution, Fit Y by X, Fit Model, Process Capability, Oneway, and Multivariate.
 - [x] Red triangle report menus on implemented analytical panels.
-- [ ] Persist analysis runs, chart specs, reports, and scripts beyond in-memory MVP storage.
+- [x] Persist analysis runs, chart specs, reports, and scripts beyond in-memory MVP storage.
 - [ ] Add project/workspace auth and tenant boundaries.
 
 ## P1 Statistical Platforms

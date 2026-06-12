@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from .models import AnalysisTemplate, ColumnProfile, Dataset, Project, Report, SavedChart, Workspace
+from .models import AnalysisRun, AnalysisTemplate, ColumnProfile, Dataset, FitModelRun, ModelRun, Project, Report, SavedChart, Workspace
 from .sample_data import build_sample_rows
 
 
@@ -13,7 +16,9 @@ def now() -> datetime:
 
 
 class InMemoryStore:
-    def __init__(self) -> None:
+    def __init__(self, path: str | Path | None = None) -> None:
+        default_path = Path(__file__).resolve().parents[2] / ".statflow" / "store.json"
+        self.path = Path(path or os.environ.get("STATFLOW_STORE_PATH", default_path))
         self.workspaces: dict[str, Workspace] = {}
         self.projects: dict[str, Project] = {}
         self.datasets: dict[str, Dataset] = {}
@@ -23,7 +28,12 @@ class InMemoryStore:
         self.model_runs: dict[str, Any] = {}
         self.reports: dict[str, Report] = {}
         self.analysis_templates: dict[str, AnalysisTemplate] = {}
-        self.seed()
+        if self.path.exists():
+            self.load()
+            self.ensure_sample_dataset()
+        else:
+            self.seed()
+            self.save()
 
     def seed(self) -> None:
         workspace = Workspace(id="ws_demo", name="Industrial Analytics Demo", tenant_id="tenant_demo", created_at=now())
@@ -69,7 +79,43 @@ class InMemoryStore:
         )
         self.datasets[dataset.id] = dataset
         self.rows[dataset.id] = rows
+        self.save()
         return dataset
+
+    def ensure_sample_dataset(self) -> None:
+        if "ws_demo" not in self.workspaces or "prj_demo" not in self.projects or "ds_mixer_timeseries" not in self.datasets:
+            self.seed()
+            self.save()
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "workspaces": [item.model_dump(mode="json") for item in self.workspaces.values()],
+            "projects": [item.model_dump(mode="json") for item in self.projects.values()],
+            "datasets": [item.model_dump(mode="json") for item in self.datasets.values()],
+            "rows": self.rows,
+            "charts": [item.model_dump(mode="json") for item in self.charts.values()],
+            "analysis_runs": [item.model_dump(mode="json") for item in self.analysis_runs.values() if hasattr(item, "model_dump")],
+            "model_runs": [item.model_dump(mode="json") for item in self.model_runs.values() if hasattr(item, "model_dump")],
+            "reports": [item.model_dump(mode="json") for item in self.reports.values()],
+            "analysis_templates": [item.model_dump(mode="json") for item in self.analysis_templates.values()],
+        }
+        self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def load(self) -> None:
+        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        self.workspaces = {item["id"]: Workspace.model_validate(item) for item in payload.get("workspaces", [])}
+        self.projects = {item["id"]: Project.model_validate(item) for item in payload.get("projects", [])}
+        self.datasets = {item["id"]: Dataset.model_validate(item) for item in payload.get("datasets", [])}
+        self.rows = payload.get("rows", {})
+        self.charts = {item["id"]: SavedChart.model_validate(item) for item in payload.get("charts", [])}
+        self.analysis_runs = {item["id"]: AnalysisRun.model_validate(item) for item in payload.get("analysis_runs", [])}
+        model_runs: dict[str, Any] = {}
+        for item in payload.get("model_runs", []):
+            model_runs[item["id"]] = FitModelRun.model_validate(item) if item.get("model_type") == "standard_least_squares" else ModelRun.model_validate(item)
+        self.model_runs = model_runs
+        self.reports = {item["id"]: Report.model_validate(item) for item in payload.get("reports", [])}
+        self.analysis_templates = {item["id"]: AnalysisTemplate.model_validate(item) for item in payload.get("analysis_templates", [])}
 
 
 def infer_profiles(rows: list[dict[str, Any]]) -> list[ColumnProfile]:

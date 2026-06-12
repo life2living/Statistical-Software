@@ -72,6 +72,7 @@ def create_project(request: CreateProjectRequest) -> Project:
         created_at=now(),
     )
     store.projects[project.id] = project
+    store.save()
     return project
 
 
@@ -120,6 +121,7 @@ def save_chart(spec: ChartSpec) -> SavedChart:
         raise HTTPException(status_code=404, detail="Dataset not found")
     saved = SavedChart(**spec.model_dump(exclude={"id"}), id=new_id("cht"), created_at=now())
     store.charts[saved.id] = saved
+    store.save()
     return saved
 
 
@@ -129,6 +131,30 @@ def list_charts(dataset_id: str | None = None):
     if dataset_id:
         charts = [chart for chart in charts if chart.dataset_id == dataset_id]
     return charts
+
+
+@app.get("/analysis/runs")
+def list_analysis_runs(dataset_id: str | None = None):
+    runs = list(store.analysis_runs.values())
+    if dataset_id:
+        runs = [run for run in runs if run.dataset_id == dataset_id]
+    return runs
+
+
+@app.get("/models/runs")
+def list_model_runs(dataset_id: str | None = None):
+    runs = list(store.model_runs.values())
+    if dataset_id:
+        runs = [run for run in runs if run.dataset_id == dataset_id]
+    return runs
+
+
+@app.get("/reports")
+def list_reports(project_id: str | None = None):
+    reports = list(store.reports.values())
+    if project_id:
+        reports = [report for report in reports if report.project_id == project_id]
+    return reports
 
 
 @app.post("/analysis/run", response_model=AnalysisRun)
@@ -300,6 +326,7 @@ def run_analysis(request: AnalysisRequest) -> AnalysisRun:
         created_at=now(),
     )
     store.analysis_runs[run.id] = run
+    store.save()
     return run
 
 
@@ -326,6 +353,7 @@ def run_model(request: ModelRequest) -> ModelRun:
         created_at=now(),
     )
     store.model_runs[run.id] = run
+    store.save()
     return run
 
 
@@ -372,6 +400,7 @@ def run_fit_model(request: FitModelRequest) -> FitModelRun:
         created_at=now(),
     )
     store.model_runs[run.id] = run
+    store.save()
     return run
 
 
@@ -418,6 +447,7 @@ def save_fit_model_diagnostics(request: SaveFitDiagnosticsRequest) -> DatasetPre
 
     dataset.version += 1
     dataset.columns = infer_profiles(rows)
+    store.save()
     return DatasetPreview(dataset=dataset, rows=rows[:240])
 
 
@@ -439,4 +469,5 @@ def create_report(project_id: str, name: str) -> Report:
         created_at=now(),
     )
     store.reports[report.id] = report
+    store.save()
     return report
