@@ -356,3 +356,9 @@ export interface FitModelRun {
   profiler: Record<string, Record<string, { x: number; y: number; lower95?: number; upper95?: number }[]>>;
   status: "completed" | "failed";
 }
+
+export interface ProfilerOptimizeResult {
+  values: Record<string, number>;
+  prediction: number;
+  desirability: number;
+}

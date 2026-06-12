@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
+from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
@@ -16,6 +16,8 @@ from .models import (
     ModelRequest,
     ModelRun,
     Project,
+    ProfilerOptimizeRequest,
+    ProfilerOptimizeResult,
     Report,
     ReportBlock,
     SaveFitDiagnosticsRequest,
@@ -500,6 +502,28 @@ def save_fit_model_diagnostics(request: SaveFitDiagnosticsRequest, tenant_id: st
     dataset.columns = infer_profiles(rows)
     store.save()
     return DatasetPreview(dataset=dataset, rows=rows[:240])
+
+
+@app.post("/fit-model/profiler/optimize", response_model=ProfilerOptimizeResult)
+def optimize_fit_model_profiler(request: ProfilerOptimizeRequest, tenant_id: str = Depends(current_tenant_id)) -> ProfilerOptimizeResult:
+    run = store.model_runs.get(request.run_id)
+    if not run or not isinstance(run, FitModelRun):
+        raise HTTPException(status_code=404, detail="Fit Model run not found")
+    get_dataset_for_tenant(run.dataset_id, tenant_id)
+    if request.response not in run.responses:
+        raise HTTPException(status_code=400, detail="Response is not part of the Fit Model run")
+
+    result = optimize_profiler_values(
+        coefficients=run.coefficients[request.response],
+        effects=run.effects,
+        effect_ranges=[effect.model_dump() for effect in run.profiler_effects],
+        include_quadratic=run.include_quadratic,
+        goal=request.goal,
+        target=request.target,
+        current_values=request.values,
+        locks=request.locks,
+    )
+    return ProfilerOptimizeResult.model_validate(result)
 
 
 @app.post("/reports", response_model=Report)

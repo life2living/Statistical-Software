@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
+from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
 
 
 ROWS = [
@@ -245,6 +245,27 @@ def test_fit_standard_least_squares_profiler() -> None:
     assert result["information_criteria"]["y"]["aicc"] <= result["information_criteria"]["y"]["aic"] + 100
     assert len(result["residuals"]["y"]) == 4
     assert result["residuals"]["y"][0]["cook"] >= 0
+
+
+def test_optimize_profiler_values_respects_locks() -> None:
+    result = optimize_profiler_values(
+        coefficients={"Intercept": 0.0, "x": 2.0, "z": -1.0},
+        effects=["x", "z"],
+        effect_ranges=[
+            {"name": "x", "min": 0.0, "max": 10.0, "mean": 5.0},
+            {"name": "z", "min": 0.0, "max": 10.0, "mean": 5.0},
+        ],
+        include_quadratic=False,
+        goal="maximize",
+        target=None,
+        current_values={"x": 2.0, "z": 7.0},
+        locks={"z": True},
+    )
+
+    assert result["values"]["x"] == 10.0
+    assert result["values"]["z"] == 7.0
+    assert result["prediction"] == 13.0
+    assert result["desirability"] >= 0.9
 
 
 def test_fit_standard_least_squares_keeps_source_row_index_with_missing_values() -> None:

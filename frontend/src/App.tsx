@@ -1,7 +1,7 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
+import { importDataset, listDatasets, optimizeFitModelProfiler, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
 import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun, VariabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
@@ -307,6 +307,15 @@ function predictFit(run: FitModelRun, response: string, values: Record<string, n
 
 type ProfilerGoal = "maximize" | "minimize" | "target";
 
+function profilerDefaults(run: FitModelRun) {
+  return Object.fromEntries(run.profiler_effects.map((effect) => [effect.name, effect.mean]));
+}
+
+function profilerValue(run: FitModelRun, values: Record<string, number>, effectName: string) {
+  const effect = run.profiler_effects.find((candidate) => candidate.name === effectName);
+  return values[effectName] ?? effect?.mean ?? 0;
+}
+
 function profilerResponseRange(run: FitModelRun, response: string) {
   const values = run.effects.flatMap((effect) => (run.profiler[response]?.[effect] ?? []).map((point) => point.y));
   if (values.length === 0) return { min: 0, max: 1 };
@@ -323,9 +332,20 @@ function desirabilityScore(run: FitModelRun, response: string, prediction: numbe
   return Math.min(1, Math.max(0, 1 - Math.abs(prediction - objective) / tolerance));
 }
 
+function dynamicProfilerPoints(run: FitModelRun, response: string, effect: string, values: Record<string, number>) {
+  const points = run.profiler[response]?.[effect] ?? [];
+  return points.map((point) => {
+    const prediction = predictFit(run, response, { ...values, [effect]: point.x });
+    const lowerMargin = point.y - (point.lower95 ?? point.y);
+    const upperMargin = (point.upper95 ?? point.y) - point.y;
+    return { x: point.x, y: prediction, lower95: prediction - lowerMargin, upper95: prediction + upperMargin };
+  });
+}
+
 function buildProfilerOption(run: FitModelRun, response: string, values: Record<string, number>): EChartsOption {
   const series = run.effects.flatMap((effect) => {
-    const points = run.profiler[response]?.[effect] ?? [];
+    const resolvedValues = { ...profilerDefaults(run), ...values };
+    const points = dynamicProfilerPoints(run, response, effect, resolvedValues);
     return [
       {
         type: "line" as const,
@@ -334,7 +354,7 @@ function buildProfilerOption(run: FitModelRun, response: string, values: Record<
         data: points.map((point) => [point.x, point.y]),
         markLine: {
           symbol: "none",
-          data: [{ xAxis: values[effect], lineStyle: { color: "#dc2626", type: "dashed" }, label: { formatter: effect } }]
+          data: [{ xAxis: profilerValue(run, resolvedValues, effect), lineStyle: { color: "#dc2626", type: "dashed" }, label: { formatter: effect } }]
         }
       },
       {
@@ -2615,7 +2635,7 @@ export default function App() {
       return;
     }
     const result = await runFitModel(preview.dataset.id, responses, effects, includeQuadratic);
-    const defaults = Object.fromEntries(result.profiler_effects.map((effect) => [effect.name, effect.mean]));
+    const defaults = profilerDefaults(result);
     const locks = Object.fromEntries(result.profiler_effects.map((effect) => [effect.name, false]));
     const initialPrediction = predictFit(result, result.responses[0], defaults);
     setFitRun(result);
@@ -2626,6 +2646,13 @@ export default function App() {
     setProfilerTarget(initialPrediction);
     setFitModelMenuOpen(true);
     setStatus(`Fit Model ${result.id}: ${responses.join(", ")} by ${effects.join(", ")}.`);
+  }
+
+  async function handleOptimizeProfiler() {
+    if (!fitRun || !profileResponse) return;
+    const optimized = await optimizeFitModelProfiler(fitRun.id, profileResponse, profilerValues, profilerLocks, profilerGoal, profilerTarget);
+    setProfilerValues(optimized.values);
+    setStatus(`Optimized unlocked profiler factors for ${profileResponse}: prediction ${optimized.prediction.toFixed(3)}, desirability ${optimized.desirability.toFixed(3)}.`);
   }
 
   async function handleSaveFitDiagnostics() {
@@ -3116,10 +3143,11 @@ export default function App() {
                         />
                       </label>
                       <button onClick={() => {
-                        const defaults = Object.fromEntries(fitRun.profiler_effects.map((effect) => [effect.name, effect.mean]));
+                        const defaults = profilerDefaults(fitRun);
                         setProfilerValues(defaults);
                         setProfilerLocks(Object.fromEntries(fitRun.profiler_effects.map((effect) => [effect.name, false])));
                       }}>Reset Factors</button>
+                      <button onClick={handleOptimizeProfiler}>Optimize Unlocked</button>
                     </div>
                     <div className="profiler-controls">
                       {fitRun.profiler_effects.map((effect) => (

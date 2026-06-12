@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun, VariabilityRun } from "./types";
+import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ProfilerOptimizeResult, TabulateRun, VariabilityRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -210,5 +210,19 @@ export function saveFitModelDiagnostics(runId: string, includeFormula = false, e
   return request<DatasetPreview>("/fit-model/save-diagnostics", {
     method: "POST",
     body: JSON.stringify({ run_id: runId, include_formula: includeFormula, execute_formula: executeFormula })
+  });
+}
+
+export function optimizeFitModelProfiler(
+  runId: string,
+  response: string,
+  values: Record<string, number>,
+  locks: Record<string, boolean>,
+  goal: "maximize" | "minimize" | "target",
+  target: number | null
+): Promise<ProfilerOptimizeResult> {
+  return request<ProfilerOptimizeResult>("/fit-model/profiler/optimize", {
+    method: "POST",
+    body: JSON.stringify({ run_id: runId, response, values, locks, goal, target })
   });
 }

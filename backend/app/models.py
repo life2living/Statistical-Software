@@ -137,6 +137,21 @@ class SaveFitDiagnosticsRequest(BaseModel):
     execute_formula: bool = True
 
 
+class ProfilerOptimizeRequest(BaseModel):
+    run_id: str
+    response: str
+    values: dict[str, float] = Field(default_factory=dict)
+    locks: dict[str, bool] = Field(default_factory=dict)
+    goal: Literal["maximize", "minimize", "target"] = "maximize"
+    target: float | None = None
+
+
+class ProfilerOptimizeResult(BaseModel):
+    values: dict[str, float]
+    prediction: float
+    desirability: float
+
+
 class ProfilerEffect(BaseModel):
     name: str
     min: float

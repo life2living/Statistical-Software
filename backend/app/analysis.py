@@ -1482,6 +1482,78 @@ def model_vector(row_or_values: dict[str, Any], effects: list[str], include_quad
     return values
 
 
+def predict_profile(coefficients: dict[str, float], effects: list[str], values: dict[str, float], include_quadratic: bool) -> float:
+    prediction = coefficients.get("Intercept", 0.0)
+    for effect in effects:
+        value = float(values.get(effect, 0.0))
+        prediction += coefficients.get(effect, 0.0) * value
+        if include_quadratic:
+            prediction += coefficients.get(f"{effect}^2", 0.0) * value * value
+    return prediction
+
+
+def profiler_desirability(prediction: float, response_min: float, response_max: float, goal: str, target: float | None = None) -> float:
+    # Desirability scoring follows the public Derringer-Suich response-optimization pattern.
+    width = max(1e-9, response_max - response_min)
+    if goal == "maximize":
+        return min(1.0, max(0.0, (prediction - response_min) / width))
+    if goal == "minimize":
+        return min(1.0, max(0.0, (response_max - prediction) / width))
+    if goal == "target":
+        objective = target if target is not None else (response_min + response_max) / 2
+        tolerance = max(1e-9, abs(response_max - objective), abs(response_min - objective))
+        return min(1.0, max(0.0, 1 - abs(prediction - objective) / tolerance))
+    raise ValueError("Profiler goal must be maximize, minimize, or target.")
+
+
+def optimize_profiler_values(
+    coefficients: dict[str, float],
+    effects: list[str],
+    effect_ranges: list[dict[str, float | str]],
+    include_quadratic: bool,
+    goal: str,
+    target: float | None,
+    current_values: dict[str, float],
+    locks: dict[str, bool],
+) -> dict[str, Any]:
+    ranges = {str(effect["name"]): effect for effect in effect_ranges}
+    best_values = {effect: float(ranges[effect]["mean"]) for effect in effects if effect in ranges}
+    best_values.update({effect: float(value) for effect, value in current_values.items() if effect in effects})
+
+    response_candidates = [
+        predict_profile(coefficients, effects, {**best_values, effect: float(point)}, include_quadratic)
+        for effect in effects
+        if effect in ranges
+        for point in (float(ranges[effect]["min"]), float(ranges[effect]["mean"]), float(ranges[effect]["max"]))
+    ]
+    if not response_candidates:
+        prediction = predict_profile(coefficients, effects, best_values, include_quadratic)
+        return {"values": best_values, "prediction": prediction, "desirability": 0.0}
+    response_min = min(response_candidates)
+    response_max = max(response_candidates)
+    best_prediction = predict_profile(coefficients, effects, best_values, include_quadratic)
+    best_score = profiler_desirability(best_prediction, response_min, response_max, goal, target)
+
+    unlocked = [effect for effect in effects if not locks.get(effect, False) and effect in ranges]
+    # Coordinate search keeps the implementation deterministic and dependency-free for profiler sliders.
+    for _ in range(5):
+        for effect in unlocked:
+            effect_range = ranges[effect]
+            low = float(effect_range["min"])
+            high = float(effect_range["max"])
+            for index in range(41):
+                candidate_value = low if high == low else low + (high - low) * index / 40
+                candidate_values = {**best_values, effect: candidate_value}
+                prediction = predict_profile(coefficients, effects, candidate_values, include_quadratic)
+                score = profiler_desirability(prediction, response_min, response_max, goal, target)
+                if score > best_score:
+                    best_values = candidate_values
+                    best_prediction = prediction
+                    best_score = score
+
+    return {"values": best_values, "prediction": best_prediction, "desirability": best_score}
+
+
 def build_profiler_curves(
     beta: list[float],
     effects: list[str],

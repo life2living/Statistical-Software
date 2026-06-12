@@ -18,7 +18,7 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
 - Add lack-of-fit test decomposition when replicated effect settings provide pure-error degrees of freedom.
 - Add 95% mean-response confidence limits to Factor Profiler curves using public OLS covariance formulas.
 - Add Factor Profiler target controls with maximize/minimize/match-target desirability scoring.
-- Add lock-factor controls so selected profiler factors stay fixed while other sliders move.
+- Add lock-factor controls so selected profiler factors stay fixed while other sliders move and while backend optimization searches unlocked factors.
 - Execute saved prediction formulas into numeric formula-predicted columns when diagnostics are saved.
 
 ## Backend
@@ -42,6 +42,8 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
 - The Fit Model output keeps the existing Prediction Profiler and appends a response-specific diagnostics panel.
 - The top-left report red triangle menu uses grouped actions for Fit Summary, ANOVA, Parameter Estimates, Effect Tests, Effect Leverage, Lack of Fit, AICc, Factor Profiler, row diagnostic plots, and saved prediction/diagnostic columns.
 - The Prediction Profiler includes goal selection, target entry, desirability score, per-factor lock toggles, and reset controls.
+- Profiler curves are recalculated from the current factor settings instead of only showing baseline curves, so moving one factor shifts the predicted response curves for the other factors.
+- The `POST /fit-model/profiler/optimize` API performs coordinate search over unlocked profiler factors and returns optimized factor settings, prediction, and desirability.
 - Default launch behavior now chooses a numeric effect even when Graph Builder's X role contains a timestamp, so the sample dataset can run Fit Model immediately.
 
 ## Validation
