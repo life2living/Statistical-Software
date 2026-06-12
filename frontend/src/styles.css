@@ -1103,6 +1103,38 @@ input {
   outline: 1px solid #fb923c;
 }
 
+.doe-platform {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(420px, 1fr) 180px;
+  padding: 12px;
+}
+
+.doe-factor-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.doe-factor-grid > span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.doe-factor-row {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(120px, 1fr) 110px 110px 90px;
+}
+
+.doe-factor-row input {
+  min-width: 0;
+}
+
+.doe-preview {
+  grid-column: 1 / -1;
+}
+
 .fit-summary-grid {
   display: grid;
   gap: 6px;

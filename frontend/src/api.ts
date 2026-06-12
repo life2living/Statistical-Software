@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ProfilerOptimizeResult, TabulateRun, VariabilityRun } from "./types";
+import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ProfilerOptimizeResult, TabulateRun, VariabilityRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -34,6 +34,20 @@ export async function importDataset(file: File): Promise<DatasetPreview> {
     throw new Error(await response.text());
   }
   return response.json() as Promise<DatasetPreview>;
+}
+
+export function generateFullFactorialDoe(factors: DoeFactor[], replicates: number, randomize: boolean, seed: number): Promise<DatasetPreview> {
+  return request<DatasetPreview>("/doe/full-factorial", {
+    method: "POST",
+    body: JSON.stringify({
+      project_id: "prj_demo",
+      name: "Generated full factorial DOE",
+      factors,
+      replicates,
+      randomize,
+      seed
+    })
+  });
 }
 
 export function saveChart(spec: ChartSpec): Promise<ChartSpec & { id: string }> {

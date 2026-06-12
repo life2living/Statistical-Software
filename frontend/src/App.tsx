@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, listLinearModelRuns, optimizeFitModelProfiler, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun, VariabilityRun } from "./types";
+import { generateFullFactorialDoe, importDataset, listDatasets, listLinearModelRuns, optimizeFitModelProfiler, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun, VariabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -2320,7 +2320,7 @@ export default function App() {
   const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR" | "variability">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR" | "variability" | "doe">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -2396,6 +2396,13 @@ export default function App() {
   const [showCapabilitySummary, setShowCapabilitySummary] = useState(true);
   const [showCapabilityIndices, setShowCapabilityIndices] = useState(true);
   const [showCapabilityObserved, setShowCapabilityObserved] = useState(true);
+  const [doeFactors, setDoeFactors] = useState<DoeFactor[]>([
+    { name: "temperature", low: 70, high: 80 },
+    { name: "pressure", low: 4, high: 6 }
+  ]);
+  const [doeReplicates, setDoeReplicates] = useState(1);
+  const [doeRandomize, setDoeRandomize] = useState(false);
+  const [doeSeed, setDoeSeed] = useState(1);
 
   async function loadDataset(datasetId: string) {
     const datasetPreview = await previewDataset(datasetId);
@@ -2603,6 +2610,27 @@ export default function App() {
     setStatus(`Loaded ${datasetPreview.dataset.name}: ${datasetPreview.dataset.row_count} rows, ${datasetPreview.dataset.columns.length} columns.`);
   }
 
+  function updateDoeFactor(index: number, patch: Partial<DoeFactor>) {
+    setDoeFactors((current) => current.map((factor, factorIndex) => (factorIndex === index ? { ...factor, ...patch } : factor)));
+  }
+
+  async function handleGenerateDoe() {
+    const cleanedFactors = doeFactors.filter((factor) => String(factor.name).trim());
+    if (cleanedFactors.length === 0) {
+      setStatus("DOE generation requires at least one factor.");
+      return;
+    }
+    const datasetPreview = await generateFullFactorialDoe(cleanedFactors, doeReplicates, doeRandomize, doeSeed);
+    setPreview(datasetPreview);
+    setDatasets(await listDatasets());
+    setModelRuns([]);
+    const factorColumns = datasetPreview.dataset.columns.filter((column) => !["standard_order", "run_order", "replicate"].includes(column.name));
+    setZones({ ...emptyZones, x: factorColumns[0] ? [factorColumns[0].name] : [], y: factorColumns[1] ? [factorColumns[1].name] : [] });
+    setChartType("scatter");
+    setSelectedRows(new Set());
+    setStatus(`Generated DOE ${datasetPreview.dataset.id}: ${datasetPreview.dataset.row_count} runs from ${cleanedFactors.length} factors.`);
+  }
+
   function toggleRowSelection(index: number) {
     setSelectedRows((current) => {
       const next = new Set(current);
@@ -2756,6 +2784,11 @@ export default function App() {
       setTabulateY(seeded.length > 0 ? seeded : numericColumns.slice(0, 2));
     }
     setActiveAnalyzePlatform("tabulate");
+    setAnalyzeMenuOpen(false);
+  }
+
+  function openDoePlatform() {
+    setActiveAnalyzePlatform("doe");
     setAnalyzeMenuOpen(false);
   }
 
@@ -3000,7 +3033,7 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "gaugeRR" || activeAnalyzePlatform === "variability" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "gaugeRR" || activeAnalyzePlatform === "variability" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" || activeAnalyzePlatform === "doe" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
@@ -3021,6 +3054,7 @@ export default function App() {
                 <button onClick={openCapabilityPlatform}>Process Capability</button>
                 <button onClick={openGaugeRRPlatform}>Gauge R&amp;R</button>
                 <button onClick={openVariabilityPlatform}>Variability Chart</button>
+                <button onClick={openDoePlatform}>DOE</button>
               </div>
             ) : null}
           </div>
@@ -3035,7 +3069,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "variability" ? "Variability Chart" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "variability" ? "Variability Chart" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : activeAnalyzePlatform === "doe" ? "DOE" : "Graph Builder"}</strong>
         <span>{status}</span>
       </section>
 
@@ -3899,6 +3933,49 @@ export default function App() {
             onToggleIndices={() => setShowCapabilityIndices((show) => !show)}
             onToggleObserved={() => setShowCapabilityObserved((show) => !show)}
           />
+        </section>
+      ) : activeAnalyzePlatform === "doe" ? (
+        <section className="doe-platform">
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Full Factorial Design</h3>
+              <div className="doe-factor-grid">
+                <span>Factor</span>
+                <span>Low</span>
+                <span>High</span>
+                <span />
+                {doeFactors.map((factor, index) => (
+                  <div className="doe-factor-row" key={index}>
+                    <input value={factor.name} onChange={(event) => updateDoeFactor(index, { name: event.target.value })} />
+                    <input value={factor.low} onChange={(event) => updateDoeFactor(index, { low: event.target.value })} />
+                    <input value={factor.high} onChange={(event) => updateDoeFactor(index, { high: event.target.value })} />
+                    <button onClick={() => setDoeFactors((current) => current.filter((_, factorIndex) => factorIndex !== index))}>Remove</button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setDoeFactors((current) => [...current, { name: `factor_${current.length + 1}`, low: -1, high: 1 }])}>Add Factor</button>
+              <div className="spec-limit-grid">
+                <label>Replicates<input type="number" min={1} max={100} value={doeReplicates} onChange={(event) => setDoeReplicates(Number(event.target.value))} /></label>
+                <label>Seed<input type="number" value={doeSeed} onChange={(event) => setDoeSeed(Number(event.target.value))} /></label>
+                <label className="quadratic-toggle"><input type="checkbox" checked={doeRandomize} onChange={(event) => setDoeRandomize(event.target.checked)} /> Randomize</label>
+              </div>
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleGenerateDoe}>Generate</button>
+            <button onClick={() => setDoeFactors([{ name: "temperature", low: 70, high: 80 }, { name: "pressure", low: 4, high: 6 }])}>Reset</button>
+          </aside>
+
+          <section className="doe-preview">
+            <h3>{preview?.dataset.source === "doe:full_factorial" ? preview.dataset.name : "Generated Design"}</h3>
+            {preview?.dataset.source === "doe:full_factorial" ? (
+              <DataPreviewTable preview={preview} selectedRows={selectedRows} onToggleRow={toggleRowSelection} />
+            ) : (
+              <p>Define factors and generate a full factorial design.</p>
+            )}
+          </section>
         </section>
         ) : (
       <section className="builder-body">

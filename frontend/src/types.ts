@@ -31,6 +31,12 @@ export interface DatasetPreview {
   rows: Record<string, string | number | null>[];
 }
 
+export interface DoeFactor {
+  name: string;
+  low: string | number;
+  high: string | number;
+}
+
 export interface ChartSpec {
   dataset_id: string;
   name: string;

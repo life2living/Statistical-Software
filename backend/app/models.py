@@ -57,6 +57,21 @@ class DatasetPreview(BaseModel):
     rows: list[dict[str, Any]]
 
 
+class DoeFactor(BaseModel):
+    name: str
+    low: float | str
+    high: float | str
+
+
+class DoeGenerateRequest(BaseModel):
+    project_id: str = "prj_demo"
+    name: str = "Full factorial DOE"
+    factors: list[DoeFactor]
+    replicates: int = 1
+    randomize: bool = False
+    seed: int = 1
+
+
 class ChartEncoding(BaseModel):
     x: str | None = None
     y: str | None = None

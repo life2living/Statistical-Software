@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
+from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
@@ -11,6 +11,7 @@ from .models import (
     ChartSpec,
     CreateProjectRequest,
     DatasetPreview,
+    DoeGenerateRequest,
     FitModelRequest,
     FitModelRun,
     ModelRequest,
@@ -167,6 +168,28 @@ async def import_dataset(
 def preview_dataset(dataset_id: str, limit: int = 100, tenant_id: str = Depends(current_tenant_id)) -> DatasetPreview:
     dataset = get_dataset_for_tenant(dataset_id, tenant_id)
     return DatasetPreview(dataset=dataset, rows=store.rows[dataset_id][:limit])
+
+
+@app.post("/doe/full-factorial", response_model=DatasetPreview)
+def generate_full_factorial_doe(request: DoeGenerateRequest, tenant_id: str = Depends(current_tenant_id)) -> DatasetPreview:
+    get_project_for_tenant(request.project_id, tenant_id)
+    try:
+        rows = full_factorial_design(
+            [factor.model_dump() for factor in request.factors],
+            replicates=request.replicates,
+            randomize=request.randomize,
+            seed=request.seed,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    dataset = store.add_dataset(
+        project_id=request.project_id,
+        name=request.name,
+        source="doe:full_factorial",
+        rows=rows,
+    )
+    return DatasetPreview(dataset=dataset, rows=rows[:240])
 
 
 @app.post("/charts", response_model=SavedChart)

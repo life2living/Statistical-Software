@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
+from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
 
 
 ROWS = [
@@ -226,6 +226,33 @@ def test_linear_regression_one_feature() -> None:
     result = linear_regression(ROWS, "y", ["x"])
     assert round(result["coefficients"]["x"], 6) == 2.0
     assert round(result["metrics"]["r2"], 6) == 1.0
+
+
+def test_full_factorial_design_generates_all_level_combinations() -> None:
+    rows = full_factorial_design(
+        [
+            {"name": "temperature", "low": 70.0, "high": 80.0},
+            {"name": "pressure", "low": 4.0, "high": 6.0},
+        ],
+        replicates=2,
+    )
+
+    assert len(rows) == 8
+    assert rows[0]["standard_order"] == 1
+    assert rows[0]["run_order"] == 1
+    assert rows[0]["temperature"] == 70.0
+    assert rows[3]["temperature"] == 80.0
+    assert rows[4]["replicate"] == 2
+
+
+def test_full_factorial_design_randomization_is_seeded() -> None:
+    factors = [{"name": "x", "low": -1.0, "high": 1.0}, {"name": "z", "low": -1.0, "high": 1.0}]
+
+    first = full_factorial_design(factors, randomize=True, seed=42)
+    second = full_factorial_design(factors, randomize=True, seed=42)
+
+    assert first == second
+    assert [row["standard_order"] for row in first] != [1, 2, 3, 4]
 
 
 def test_linear_regression_validation_split_reports_holdout_metrics() -> None:

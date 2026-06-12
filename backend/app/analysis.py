@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from itertools import product
 from math import log, pi, sqrt
+from random import Random
 from statistics import mean, median, stdev
 from typing import Any
 
@@ -1237,6 +1239,37 @@ def numeric_pairs(rows: list[dict[str, Any]], left_column: str, right_column: st
         for row in rows
         if is_numeric(row.get(left_column)) and is_numeric(row.get(right_column))
     ]
+
+
+def full_factorial_design(factors: list[dict[str, Any]], replicates: int = 1, randomize: bool = False, seed: int = 1) -> list[dict[str, Any]]:
+    clean_factors = [
+        {"name": str(factor["name"]).strip(), "low": factor["low"], "high": factor["high"]}
+        for factor in factors
+        if str(factor.get("name", "")).strip()
+    ]
+    if not clean_factors:
+        raise ValueError("DOE generation requires at least one factor.")
+    if len({factor["name"] for factor in clean_factors}) != len(clean_factors):
+        raise ValueError("DOE factor names must be unique.")
+    if replicates < 1 or replicates > 100:
+        raise ValueError("DOE replicates must be between 1 and 100.")
+
+    rows: list[dict[str, Any]] = []
+    standard_order = 1
+    levels = [[factor["low"], factor["high"]] for factor in clean_factors]
+    # Full-factorial DOE generation is the public Cartesian product of factor levels.
+    for replicate in range(1, replicates + 1):
+        for combination in product(*levels):
+            row = {"standard_order": standard_order, "replicate": replicate}
+            row.update({factor["name"]: value for factor, value in zip(clean_factors, combination)})
+            rows.append(row)
+            standard_order += 1
+
+    if randomize:
+        Random(seed).shuffle(rows)
+    for run_order, row in enumerate(rows, start=1):
+        row["run_order"] = run_order
+    return rows
 
 
 def regression_fit(pairs: list[tuple[float, float]]) -> tuple[float, float]:
