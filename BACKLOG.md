@@ -32,7 +32,8 @@
 - [x] Fit Model richer profiler options, desirability, lock factors, and formula-column execution.
 - [x] Tabulate platform first slice for grouped summary tables.
 - [x] Pareto platform first slice with Freq, By, cumulative percent, and red-triangle toggle.
-- [ ] Gauge R&R, Variability Chart, and measurement system analysis.
+- [x] Gauge R&R crossed ANOVA first slice with variance components and NDC.
+- [ ] Variability Chart and expanded measurement system analysis.
 
 ## P2 Modeling And Quality Workflows
 

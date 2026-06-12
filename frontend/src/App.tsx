@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, saveChart, saveFitModelDiagnostics } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun } from "./types";
+import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, saveChart, saveFitModelDiagnostics } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -755,6 +755,25 @@ function buildParetoOption(run: ParetoRun, showCumulative: boolean): EChartsOpti
         lineStyle: { color: "#dc2626" }
       }] : [])
     ] as SeriesOption[]
+  };
+}
+
+function buildGaugeRROption(run: GaugeRRRun): EChartsOption {
+  const result = run.outputs.gauge_rr;
+  const components = result.components.filter((component) => component.source !== "Total Variation");
+  return {
+    animation: false,
+    tooltip: { trigger: "axis" },
+    legend: { top: 0 },
+    grid: { left: 90, right: 32, top: 46, bottom: 82 },
+    xAxis: { type: "category", data: components.map((component) => component.source), axisLabel: { interval: 0, rotate: 25 } },
+    yAxis: { type: "value", name: "% Contribution", min: 0, max: 100 },
+    series: [{
+      type: "bar",
+      name: "Variance Contribution",
+      data: components.map((component) => component.contribution_percent),
+      itemStyle: { color: "#0f766e" }
+    }] as SeriesOption[]
   };
 }
 
@@ -1644,6 +1663,106 @@ function ParetoReport({
   );
 }
 
+function GaugeRRReport({
+  run,
+  menuOpen,
+  showAnova,
+  onToggleMenu,
+  onToggleAnova
+}: {
+  run: GaugeRRRun | null;
+  menuOpen: boolean;
+  showAnova: boolean;
+  onToggleMenu: () => void;
+  onToggleAnova: () => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!hostRef.current || !run) return;
+    if (chartRef.current) chartRef.current.dispose();
+    chartRef.current = echarts.init(hostRef.current);
+    const resize = () => chartRef.current?.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chartRef.current?.dispose();
+      chartRef.current = null;
+    };
+  }, [run]);
+
+  useEffect(() => {
+    if (!chartRef.current || !run) return;
+    chartRef.current.setOption(buildGaugeRROption(run), true);
+  }, [run]);
+
+  if (!run) {
+    return (
+      <section className="fit-y-report-window">
+        <p>Assign Measurement, Part, and Operator, then click Run.</p>
+      </section>
+    );
+  }
+
+  const result = run.outputs.gauge_rr;
+  return (
+    <section className="fit-y-report-window">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Gauge R&R options">▶</button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onToggleAnova}>{showAnova ? "Hide ANOVA" : "Show ANOVA"}</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>Gauge R&amp;R of {result.measurement}</h3>
+        <span>{result.part_count.toFixed(0)} parts, {result.operator_count.toFixed(0)} operators, {result.replicates.toFixed(0)} repeats</span>
+      </div>
+      <div className="fit-y-stats">
+        <span>Gauge R&amp;R {result.metrics.gauge_rr_percent_study_variation.toFixed(2)}% SV</span>
+        <span>Part-To-Part {result.metrics.part_to_part_percent_study_variation.toFixed(2)}% SV</span>
+        <span>NDC {result.metrics.ndc.toFixed(2)}</span>
+      </div>
+      <div ref={hostRef} className="fit-y-chart control-chart-builder" />
+      <div className="residual-table">
+        <table>
+          <thead><tr><th>Source</th><th>Variance</th><th>% Contribution</th><th>Std Dev</th><th>% Study Var</th></tr></thead>
+          <tbody>
+            {result.components.map((component) => (
+              <tr key={component.source}>
+                <td>{component.source}</td>
+                <td>{component.variance.toFixed(6)}</td>
+                <td>{component.contribution_percent.toFixed(3)}</td>
+                <td>{component.stddev.toFixed(6)}</td>
+                <td>{component.study_variation_percent.toFixed(3)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {showAnova ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Source</th><th>DF</th><th>SS</th><th>MS</th></tr></thead>
+            <tbody>
+              {result.anova.map((row) => (
+                <tr key={row.source}>
+                  <td>{row.source}</td>
+                  <td>{row.df.toFixed(0)}</td>
+                  <td>{row.sum_squares.toFixed(6)}</td>
+                  <td>{row.mean_square.toFixed(6)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function FitModelReport({
   run,
   response,
@@ -2005,7 +2124,7 @@ export default function App() {
   const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -2030,6 +2149,12 @@ export default function App() {
   const [paretoRun, setParetoRun] = useState<ParetoRun | null>(null);
   const [paretoMenuOpen, setParetoMenuOpen] = useState(false);
   const [showParetoCumulative, setShowParetoCumulative] = useState(true);
+  const [gaugeMeasurement, setGaugeMeasurement] = useState<string | null>(null);
+  const [gaugePart, setGaugePart] = useState<string | null>(null);
+  const [gaugeOperator, setGaugeOperator] = useState<string | null>(null);
+  const [gaugeRun, setGaugeRun] = useState<GaugeRRRun | null>(null);
+  const [gaugeMenuOpen, setGaugeMenuOpen] = useState(false);
+  const [showGaugeAnova, setShowGaugeAnova] = useState(true);
   const [showTabulateCount, setShowTabulateCount] = useState(true);
   const [showTabulateMean, setShowTabulateMean] = useState(true);
   const [showTabulateStd, setShowTabulateStd] = useState(true);
@@ -2113,6 +2238,11 @@ export default function App() {
     setParetoBy(null);
     setParetoRun(null);
     setParetoMenuOpen(false);
+    setGaugeMeasurement(null);
+    setGaugePart(null);
+    setGaugeOperator(null);
+    setGaugeRun(null);
+    setGaugeMenuOpen(false);
     setFitYResponse(null);
     setFitXFactor(null);
     setFitYByXRun(null);
@@ -2430,6 +2560,31 @@ export default function App() {
     setAnalyzeMenuOpen(false);
   }
 
+  async function handleGaugeRR() {
+    if (!preview || !gaugeMeasurement || !gaugePart || !gaugeOperator) {
+      setStatus("Gauge R&R requires Measurement, Part, and Operator roles.");
+      return;
+    }
+    const result = await runGaugeRR(preview.dataset.id, gaugeMeasurement, { part: gaugePart, operator: gaugeOperator });
+    setGaugeRun(result);
+    setGaugeMenuOpen(true);
+    setStatus(`Gauge R&R ${result.id}: ${gaugeMeasurement} by ${gaugePart} and ${gaugeOperator}.`);
+  }
+
+  function openGaugeRRPlatform() {
+    if (!gaugeMeasurement) {
+      setGaugeMeasurement(zones.y.find((field) => numericColumns.includes(field)) ?? numericColumns[0] ?? null);
+    }
+    if (!gaugePart) {
+      setGaugePart(groupingColumns.find((field) => field.toLowerCase().includes("batch")) ?? groupingColumns[0] ?? null);
+    }
+    if (!gaugeOperator) {
+      setGaugeOperator(groupingColumns.find((field) => field.toLowerCase().includes("equipment")) ?? groupingColumns.find((field) => field !== gaugePart) ?? null);
+    }
+    setActiveAnalyzePlatform("gaugeRR");
+    setAnalyzeMenuOpen(false);
+  }
+
   async function handleMultivariate() {
     if (!preview) return;
     const columnsForRun = multivariateY.length > 1 ? multivariateY : numericColumns.slice(0, 4);
@@ -2605,7 +2760,7 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "gaugeRR" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
@@ -2624,6 +2779,7 @@ export default function App() {
                 <button>Specialized Modeling</button>
                 <button onClick={openControlChartPlatform}>Control Chart Builder</button>
                 <button onClick={openCapabilityPlatform}>Process Capability</button>
+                <button onClick={openGaugeRRPlatform}>Gauge R&amp;R</button>
               </div>
             ) : null}
           </div>
@@ -2638,7 +2794,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
         <span>{status}</span>
       </section>
 
@@ -3053,6 +3209,74 @@ export default function App() {
             showCumulative={showParetoCumulative}
             onToggleMenu={() => setParetoMenuOpen((open) => !open)}
             onToggleCumulative={() => setShowParetoCumulative((show) => !show)}
+          />
+        </section>
+      ) : activeAnalyzePlatform === "gaugeRR" ? (
+        <section className="distribution-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Assign Roles</h3>
+              <DistributionRoleDrop
+                label="Measurement"
+                values={gaugeMeasurement ? [gaugeMeasurement] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setGaugeMeasurement(field)}
+                onRemove={() => setGaugeMeasurement(null)}
+              />
+              <DistributionRoleDrop
+                label="Part"
+                values={gaugePart ? [gaugePart] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setGaugePart(field)}
+                onRemove={() => setGaugePart(null)}
+              />
+              <DistributionRoleDrop
+                label="Operator"
+                values={gaugeOperator ? [gaugeOperator] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setGaugeOperator(field)}
+                onRemove={() => setGaugeOperator(null)}
+              />
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleGaugeRR}>Run</button>
+            <button onClick={() => {
+              setGaugeMeasurement(null);
+              setGaugePart(null);
+              setGaugeOperator(null);
+              setGaugeRun(null);
+              setGaugeMenuOpen(false);
+            }}>
+              Remove
+            </button>
+            <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
+          </aside>
+
+          <GaugeRRReport
+            run={gaugeRun}
+            menuOpen={gaugeMenuOpen}
+            showAnova={showGaugeAnova}
+            onToggleMenu={() => setGaugeMenuOpen((open) => !open)}
+            onToggleAnova={() => setShowGaugeAnova((show) => !show)}
           />
         </section>
       ) : activeAnalyzePlatform === "multivariate" ? (

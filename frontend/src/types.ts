@@ -117,6 +117,25 @@ export interface ParetoRun extends AnalysisRun {
   };
 }
 
+export interface GaugeRRRun extends AnalysisRun {
+  method: "gauge_rr";
+  outputs: {
+    gauge_rr: {
+      measurement: string;
+      part: string;
+      operator: string;
+      n: number;
+      missing: number;
+      part_count: number;
+      operator_count: number;
+      replicates: number;
+      anova: { source: string; df: number; sum_squares: number; mean_square: number }[];
+      components: { source: string; variance: number; contribution_percent: number; stddev: number; study_variation: number; study_variation_percent: number }[];
+      metrics: { gauge_rr_percent_study_variation: number; part_to_part_percent_study_variation: number; ndc: number };
+    };
+  };
+}
+
 export interface FitYByXRun extends AnalysisRun {
   method: "fit_y_by_x";
   outputs: {

@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun } from "./types";
+import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -85,6 +85,18 @@ export function runPareto(datasetId: string, category: string, roles: { count?: 
       dataset_id: datasetId,
       method: "pareto",
       columns: [category],
+      parameters: roles
+    })
+  });
+}
+
+export function runGaugeRR(datasetId: string, measurement: string, roles: { part?: string | null; operator?: string | null }): Promise<GaugeRRRun> {
+  return request<GaugeRRRun>("/analysis/run", {
+    method: "POST",
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      method: "gauge_rr",
+      columns: [measurement],
       parameters: roles
     })
   });

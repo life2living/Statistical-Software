@@ -612,6 +612,128 @@ def pareto_summary(
     }
 
 
+def gauge_rr_crossed(
+    rows: list[dict[str, Any]],
+    measurement_column: str,
+    part_column: str,
+    operator_column: str,
+) -> dict[str, Any]:
+    cells: dict[tuple[str, str], list[float]] = {}
+    missing = 0
+    for row in rows:
+        measurement = row.get(measurement_column)
+        part = row.get(part_column)
+        operator = row.get(operator_column)
+        if not is_numeric(measurement) or part in {None, ""} or operator in {None, ""}:
+            missing += 1
+            continue
+        cells.setdefault((str(part), str(operator)), []).append(float(measurement))
+
+    parts = sorted({part for part, _ in cells})
+    operators = sorted({operator for _, operator in cells})
+    if len(parts) < 2 or len(operators) < 2:
+        raise ValueError("Gauge R&R requires at least two parts and two operators.")
+    if any((part, operator) not in cells for part in parts for operator in operators):
+        raise ValueError("Gauge R&R crossed analysis requires every part/operator combination.")
+    replicate_count = min(len(cells[(part, operator)]) for part in parts for operator in operators)
+    if replicate_count < 2:
+        raise ValueError("Gauge R&R requires at least two repeated measurements per part/operator cell.")
+
+    values: list[dict[str, Any]] = []
+    for part in parts:
+        for operator in operators:
+            for value in cells[(part, operator)][:replicate_count]:
+                values.append({"part": part, "operator": operator, "value": value})
+
+    p = len(parts)
+    o = len(operators)
+    r = replicate_count
+    grand_mean = mean(item["value"] for item in values)
+    part_means = {part: mean(item["value"] for item in values if item["part"] == part) for part in parts}
+    operator_means = {operator: mean(item["value"] for item in values if item["operator"] == operator) for operator in operators}
+    cell_means = {
+        (part, operator): mean(item["value"] for item in values if item["part"] == part and item["operator"] == operator)
+        for part in parts
+        for operator in operators
+    }
+
+    ss_part = o * r * sum((part_means[part] - grand_mean) ** 2 for part in parts)
+    ss_operator = p * r * sum((operator_means[operator] - grand_mean) ** 2 for operator in operators)
+    ss_interaction = r * sum(
+        (cell_means[(part, operator)] - part_means[part] - operator_means[operator] + grand_mean) ** 2
+        for part in parts
+        for operator in operators
+    )
+    ss_repeatability = sum(
+        (item["value"] - cell_means[(item["part"], item["operator"])]) ** 2
+        for item in values
+    )
+    df_part = p - 1
+    df_operator = o - 1
+    df_interaction = df_part * df_operator
+    df_repeatability = p * o * (r - 1)
+    ms_part = ss_part / df_part
+    ms_operator = ss_operator / df_operator
+    ms_interaction = ss_interaction / df_interaction if df_interaction > 0 else 0.0
+    ms_repeatability = ss_repeatability / df_repeatability
+
+    # Crossed Gauge R&R variance components follow public AIAG/NIST ANOVA EMS formulas.
+    repeatability_var = ms_repeatability
+    interaction_var = max(0.0, (ms_interaction - ms_repeatability) / r)
+    operator_var = max(0.0, (ms_operator - ms_interaction) / (p * r))
+    reproducibility_var = operator_var + interaction_var
+    part_var = max(0.0, (ms_part - ms_interaction) / (o * r))
+    gauge_var = repeatability_var + reproducibility_var
+    total_var = gauge_var + part_var
+
+    def component(name: str, variance: float) -> dict[str, float | str]:
+        stddev = sqrt(max(0.0, variance))
+        total_stddev = sqrt(max(0.0, total_var))
+        return {
+            "source": name,
+            "variance": variance,
+            "contribution_percent": 100 * variance / total_var if total_var > 0 else 0.0,
+            "stddev": stddev,
+            "study_variation": 6 * stddev,
+            "study_variation_percent": 100 * stddev / total_stddev if total_stddev > 0 else 0.0,
+        }
+
+    anova_rows = [
+        {"source": "Part", "df": float(df_part), "sum_squares": ss_part, "mean_square": ms_part},
+        {"source": "Operator", "df": float(df_operator), "sum_squares": ss_operator, "mean_square": ms_operator},
+        {"source": "Part*Operator", "df": float(df_interaction), "sum_squares": ss_interaction, "mean_square": ms_interaction},
+        {"source": "Repeatability", "df": float(df_repeatability), "sum_squares": ss_repeatability, "mean_square": ms_repeatability},
+    ]
+    components = [
+        component("Total Gauge R&R", gauge_var),
+        component("Repeatability", repeatability_var),
+        component("Reproducibility", reproducibility_var),
+        component("Operator", operator_var),
+        component("Part*Operator", interaction_var),
+        component("Part-To-Part", part_var),
+        component("Total Variation", total_var),
+    ]
+    gauge_stddev = sqrt(max(0.0, gauge_var))
+    part_stddev = sqrt(max(0.0, part_var))
+    return {
+        "measurement": measurement_column,
+        "part": part_column,
+        "operator": operator_column,
+        "n": float(len(values)),
+        "missing": float(missing),
+        "part_count": float(p),
+        "operator_count": float(o),
+        "replicates": float(r),
+        "anova": anova_rows,
+        "components": components,
+        "metrics": {
+            "gauge_rr_percent_study_variation": next(item["study_variation_percent"] for item in components if item["source"] == "Total Gauge R&R"),
+            "part_to_part_percent_study_variation": next(item["study_variation_percent"] for item in components if item["source"] == "Part-To-Part"),
+            "ndc": 1.41 * part_stddev / gauge_stddev if gauge_stddev > 0 else 0.0,
+        },
+    }
+
+
 def distribution_group_summary(
     group_name: str,
     rows: list[dict[str, Any]],

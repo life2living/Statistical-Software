@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary
+from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary
 
 
 ROWS = [
@@ -140,6 +140,25 @@ def test_pareto_summary_supports_count_and_by_roles() -> None:
     assert len(result["groups"]) == 2
     assert result["groups"][0]["total"] == 4.0
     assert result["groups"][0]["items"][0]["category"] == "Scratch"
+
+
+def test_gauge_rr_crossed_returns_variance_components() -> None:
+    rows = []
+    part_offsets = {"P1": 0.0, "P2": 8.0, "P3": 16.0}
+    operator_offsets = {"A": 0.0, "B": 1.0}
+    repeat_offsets = [-0.2, 0.2]
+    for part, part_offset in part_offsets.items():
+        for operator, operator_offset in operator_offsets.items():
+            for repeat_offset in repeat_offsets:
+                rows.append({"part": part, "operator": operator, "measurement": 100 + part_offset + operator_offset + repeat_offset})
+
+    result = gauge_rr_crossed(rows, "measurement", "part", "operator")
+
+    assert result["part_count"] == 3.0
+    assert result["operator_count"] == 2.0
+    assert result["replicates"] == 2.0
+    assert result["metrics"]["gauge_rr_percent_study_variation"] < 30.0
+    assert result["metrics"]["ndc"] > 5.0
 
 
 def test_process_capability() -> None:

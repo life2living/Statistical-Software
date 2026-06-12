@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary
+from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
@@ -208,6 +208,19 @@ def run_analysis(request: AnalysisRequest) -> AnalysisRun:
             raise HTTPException(status_code=400, detail=str(error)) from error
         outputs = {"pareto": result}
         interpretation = [f"Built Pareto chart for {result['category']} across {len(result['groups'])} group(s)."]
+    elif request.method == "gauge_rr":
+        if not request.columns:
+            raise HTTPException(status_code=400, detail="Gauge R&R requires a measurement column")
+        part_column = request.parameters.get("part")
+        operator_column = request.parameters.get("operator")
+        if not part_column or not operator_column:
+            raise HTTPException(status_code=400, detail="Gauge R&R requires Part and Operator roles")
+        try:
+            result = gauge_rr_crossed(rows, request.columns[0], str(part_column), str(operator_column))
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        outputs = {"gauge_rr": result}
+        interpretation = [f"Gauge R&R is {result['metrics']['gauge_rr_percent_study_variation']:.1f}% of study variation."]
     elif request.method == "correlation":
         if len(request.columns) < 2:
             raise HTTPException(status_code=400, detail="Correlation requires two columns")
