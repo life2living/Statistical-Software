@@ -29,7 +29,7 @@
 - [x] Fit Model effect leverage plots and prediction formula columns.
 - [x] Fit Model lack-of-fit test with pure-error decomposition.
 - [x] Prediction Profiler mean-response confidence intervals.
-- [ ] Fit Model richer profiler options, desirability, lock factors, and formula-column execution.
+- [x] Fit Model richer profiler options, desirability, lock factors, and formula-column execution.
 - [x] Tabulate platform first slice for grouped summary tables.
 - [ ] Pareto, Gauge R&R, Variability Chart, and measurement system analysis.
 

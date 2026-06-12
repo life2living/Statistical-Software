@@ -17,6 +17,9 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
 - Save a clean-room prediction formula expression alongside diagnostic columns.
 - Add lack-of-fit test decomposition when replicated effect settings provide pure-error degrees of freedom.
 - Add 95% mean-response confidence limits to Factor Profiler curves using public OLS covariance formulas.
+- Add Factor Profiler target controls with maximize/minimize/match-target desirability scoring.
+- Add lock-factor controls so selected profiler factors stay fixed while other sliders move.
+- Execute saved prediction formulas into numeric formula-predicted columns when diagnostics are saved.
 
 ## Backend
 
@@ -30,7 +33,7 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
   - `information_criteria[response]`: AIC, AICc, and BIC from Gaussian OLS log-likelihood.
   - `prediction_formulas[response]`: deterministic OLS expression for the response's predicted value.
   - `profiler[response][effect]`: profiler curve points with `y`, `lower95`, and `upper95`.
-- `POST /fit-model/save-diagnostics` writes row diagnostics from a Fit Model run back to the source dataset and refreshes column profiles. When `include_formula` is true, it also adds a prediction formula string column.
+- `POST /fit-model/save-diagnostics` writes row diagnostics from a Fit Model run back to the source dataset and refreshes column profiles. When `include_formula` is true, it adds a prediction formula string column. When `execute_formula` is true, it evaluates the stored coefficients against each row's numeric effects and adds a numeric formula-predicted column.
 - Math uses ordinary least squares normal equations. Probability calculations use SciPy survival functions for F and t distributions.
 - Missing rows are excluded per response/effect complete-case filtering.
 
@@ -38,9 +41,11 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
 
 - The Fit Model output keeps the existing Prediction Profiler and appends a response-specific diagnostics panel.
 - The top-left report red triangle menu uses grouped actions for Fit Summary, ANOVA, Parameter Estimates, Effect Tests, Effect Leverage, Lack of Fit, AICc, Factor Profiler, row diagnostic plots, and saved prediction/diagnostic columns.
+- The Prediction Profiler includes goal selection, target entry, desirability score, per-factor lock toggles, and reset controls.
 - Default launch behavior now chooses a numeric effect even when Graph Builder's X role contains a timestamp, so the sample dataset can run Fit Model immediately.
 
 ## Validation
 
 - Unit tests verify ANOVA sums of squares, parameter estimates, residual rows, and non-perfect model diagnostics.
+- API tests verify saved formula strings and executed formula-predicted values.
 - The `data.xlsx` validation path compares a simple Standard Least Squares model against the JMP-observed report shape and expected table families.

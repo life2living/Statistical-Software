@@ -1004,6 +1004,25 @@ input {
   padding: 5px 9px;
 }
 
+.profiler-objective {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.profiler-objective label {
+  display: grid;
+  font-size: 12px;
+  gap: 3px;
+}
+
+.profiler-objective input,
+.profiler-objective select {
+  min-width: 140px;
+}
+
 .profiler-controls {
   display: grid;
   gap: 7px;
@@ -1019,6 +1038,21 @@ input {
 
 .profiler-controls input {
   width: 100%;
+}
+
+.profiler-controls input:disabled {
+  opacity: 0.45;
+}
+
+.profiler-lock {
+  align-items: center;
+  color: #475569;
+  display: inline-flex;
+  gap: 5px;
+}
+
+.profiler-lock input {
+  width: auto;
 }
 
 .profiler-chart {

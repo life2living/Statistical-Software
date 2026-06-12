@@ -355,11 +355,22 @@ def save_fit_model_diagnostics(request: SaveFitDiagnosticsRequest) -> DatasetPre
             f"{response} Cook's D": "cook",
         }
         formula_column = f"{response} Prediction Formula"
+        formula_value_column = f"{response} Formula Predicted"
         for row in rows:
             for column in columns:
                 row[column] = None
             if request.include_formula:
                 row[formula_column] = run.prediction_formulas.get(response)
+            if request.execute_formula:
+                row[formula_value_column] = None
+                if all(isinstance(row.get(effect), int | float) and not isinstance(row.get(effect), bool) for effect in run.effects):
+                    prediction = run.coefficients[response].get("Intercept", 0.0)
+                    for effect in run.effects:
+                        value = float(row[effect])
+                        prediction += run.coefficients[response].get(effect, 0.0) * value
+                        if run.include_quadratic:
+                            prediction += run.coefficients[response].get(f"{effect}^2", 0.0) * value * value
+                    row[formula_value_column] = prediction
         for diagnostic in run.residuals.get(response, []):
             row_index = int(diagnostic.get("sourceRowIndex", diagnostic["rowIndex"]))
             if 0 <= row_index < len(rows):

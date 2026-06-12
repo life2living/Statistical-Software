@@ -134,6 +134,7 @@ class FitModelRequest(BaseModel):
 class SaveFitDiagnosticsRequest(BaseModel):
     run_id: str
     include_formula: bool = False
+    execute_formula: bool = True
 
 
 class ProfilerEffect(BaseModel):

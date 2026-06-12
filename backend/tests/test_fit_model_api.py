@@ -32,4 +32,6 @@ def test_save_fit_model_diagnostics_can_include_prediction_formula_column() -> N
 
     assert "pressure_bar Prediction Formula" in column_names
     assert "pressure_bar Predicted" in column_names
+    assert "pressure_bar Formula Predicted" in column_names
     assert preview["rows"][0]["pressure_bar Prediction Formula"].startswith("pressure_bar Predicted =")
+    assert preview["rows"][0]["pressure_bar Formula Predicted"] == preview["rows"][0]["pressure_bar Predicted"]

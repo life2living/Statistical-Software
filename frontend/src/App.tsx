@@ -305,6 +305,24 @@ function predictFit(run: FitModelRun, response: string, values: Record<string, n
   return prediction;
 }
 
+type ProfilerGoal = "maximize" | "minimize" | "target";
+
+function profilerResponseRange(run: FitModelRun, response: string) {
+  const values = run.effects.flatMap((effect) => (run.profiler[response]?.[effect] ?? []).map((point) => point.y));
+  if (values.length === 0) return { min: 0, max: 1 };
+  return { min: Math.min(...values), max: Math.max(...values) };
+}
+
+function desirabilityScore(run: FitModelRun, response: string, prediction: number, goal: ProfilerGoal, target: number | null) {
+  const range = profilerResponseRange(run, response);
+  const width = Math.max(1e-9, range.max - range.min);
+  if (goal === "maximize") return Math.min(1, Math.max(0, (prediction - range.min) / width));
+  if (goal === "minimize") return Math.min(1, Math.max(0, (range.max - prediction) / width));
+  const objective = target ?? (range.min + range.max) / 2;
+  const tolerance = Math.max(1e-9, Math.max(Math.abs(range.max - objective), Math.abs(range.min - objective)));
+  return Math.min(1, Math.max(0, 1 - Math.abs(prediction - objective) / tolerance));
+}
+
 function buildProfilerOption(run: FitModelRun, response: string, values: Record<string, number>): EChartsOption {
   const series = run.effects.flatMap((effect) => {
     const points = run.profiler[response]?.[effect] ?? [];
@@ -1860,6 +1878,9 @@ export default function App() {
   const [fitRun, setFitRun] = useState<FitModelRun | null>(null);
   const [activeProfileResponse, setActiveProfileResponse] = useState("");
   const [profilerValues, setProfilerValues] = useState<Record<string, number>>({});
+  const [profilerLocks, setProfilerLocks] = useState<Record<string, boolean>>({});
+  const [profilerGoal, setProfilerGoal] = useState<ProfilerGoal>("maximize");
+  const [profilerTarget, setProfilerTarget] = useState<number | null>(null);
   const [fitModelMenuOpen, setFitModelMenuOpen] = useState(false);
   const [showFitModelSummary, setShowFitModelSummary] = useState(true);
   const [showFitModelProfiler, setShowFitModelProfiler] = useState(true);
@@ -1942,6 +1963,9 @@ export default function App() {
     setFitResponses([]);
     setFitEffects([]);
     setProfilerValues({});
+    setProfilerLocks({});
+    setProfilerGoal("maximize");
+    setProfilerTarget(null);
     setActiveProfileResponse("");
     setFitModelMenuOpen(false);
     setShowFitModelSummary(true);
@@ -2041,6 +2065,9 @@ export default function App() {
   const activeX = zones.x.join(", ") || preview?.dataset.timestamp_column || "";
   const profileResponse = activeProfileResponse || fitRun?.responses[0] || "";
   const profilePrediction = fitRun && profileResponse ? predictFit(fitRun, profileResponse, profilerValues) : null;
+  const profileDesirability = fitRun && profileResponse && profilePrediction !== null
+    ? desirabilityScore(fitRun, profileResponse, profilePrediction, profilerGoal, profilerTarget)
+    : null;
 
   useEffect(() => {
     if (!chartInstance.current || !preview) return;
@@ -2191,9 +2218,14 @@ export default function App() {
     }
     const result = await runFitModel(preview.dataset.id, responses, effects, includeQuadratic);
     const defaults = Object.fromEntries(result.profiler_effects.map((effect) => [effect.name, effect.mean]));
+    const locks = Object.fromEntries(result.profiler_effects.map((effect) => [effect.name, false]));
+    const initialPrediction = predictFit(result, result.responses[0], defaults);
     setFitRun(result);
     setActiveProfileResponse(result.responses[0]);
     setProfilerValues(defaults);
+    setProfilerLocks(locks);
+    setProfilerGoal("maximize");
+    setProfilerTarget(initialPrediction);
     setFitModelMenuOpen(true);
     setStatus(`Fit Model ${result.id}: ${responses.join(", ")} by ${effects.join(", ")}.`);
   }
@@ -2204,7 +2236,7 @@ export default function App() {
     setPreview(updatedPreview);
     setDatasets(await listDatasets());
     setFitModelMenuOpen(false);
-    setStatus(`Saved prediction formulas, predicted values, residuals, leverage, and Cook's D for ${fitRun.responses.join(", ")}.`);
+    setStatus(`Saved executable prediction formulas, formula predictions, residuals, leverage, and Cook's D for ${fitRun.responses.join(", ")}.`);
   }
 
   async function handleDistribution() {
@@ -2597,17 +2629,47 @@ export default function App() {
                       <span>Adj R2 {fitRun.metrics[profileResponse]?.adj_r2.toFixed(3)}</span>
                       <span>RMSE {fitRun.metrics[profileResponse]?.rmse.toFixed(3)}</span>
                       <strong>Prediction {profilePrediction?.toFixed(3)}</strong>
+                      <strong>Desirability {profileDesirability?.toFixed(3)}</strong>
+                    </div>
+                    <div className="profiler-objective">
+                      <label>
+                        Goal
+                        <select value={profilerGoal} onChange={(event) => setProfilerGoal(event.target.value as ProfilerGoal)}>
+                          <option value="maximize">Maximize</option>
+                          <option value="minimize">Minimize</option>
+                          <option value="target">Match Target</option>
+                        </select>
+                      </label>
+                      <label>
+                        Target
+                        <input
+                          type="number"
+                          value={profilerTarget ?? ""}
+                          onChange={(event) => setProfilerTarget(event.target.value === "" ? null : Number(event.target.value))}
+                        />
+                      </label>
+                      <button onClick={() => {
+                        const defaults = Object.fromEntries(fitRun.profiler_effects.map((effect) => [effect.name, effect.mean]));
+                        setProfilerValues(defaults);
+                        setProfilerLocks(Object.fromEntries(fitRun.profiler_effects.map((effect) => [effect.name, false])));
+                      }}>Reset Factors</button>
                     </div>
                     <div className="profiler-controls">
                       {fitRun.profiler_effects.map((effect) => (
                         <label key={effect.name}>
                           <span>{effect.name}: {(profilerValues[effect.name] ?? effect.mean).toFixed(3)}</span>
+                          <span className="profiler-lock"><input
+                            type="checkbox"
+                            checked={profilerLocks[effect.name] ?? false}
+                            onChange={(event) => setProfilerLocks((current) => ({ ...current, [effect.name]: event.target.checked }))}
+                          /> Lock</span>
                           <input
                             type="range"
                             min={effect.min}
                             max={effect.max}
                             step={(effect.max - effect.min) / 100 || 1}
                             value={profilerValues[effect.name] ?? effect.mean}
+                            disabled={profilerLocks[effect.name] ?? false}
                             onChange={(event) => setProfilerValues((current) => ({ ...current, [effect.name]: Number(event.target.value) }))}
                           />
                         </label>
