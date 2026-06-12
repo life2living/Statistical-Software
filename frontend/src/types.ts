@@ -263,6 +263,7 @@ export interface FitModelRun {
   parameter_estimates: Record<string, { term: string; estimate: number; stderr: number; t_ratio: number | null; p_value: number | null }[]>;
   effect_tests: Record<string, { effect: string; df: number; sum_squares: number; f_ratio: number | null; p_value: number | null }[]>;
   effect_leverage: Record<string, { effect: string; estimate: number; sum_squares: number; f_ratio: number | null; p_value: number | null; leverage_score: number }[]>;
+  lack_of_fit: Record<string, { status: "ok" | "not_estimable"; distinct_points: number; replicated_points: number; rows: { source: string; df: number; sum_squares: number; mean_square: number; f_ratio: number | null; p_value: number | null }[] }>;
   residuals: Record<string, { rowIndex: number; sourceRowIndex?: number; actual: number; predicted: number; residual: number; studentized: number; leverage: number; cook: number }[]>;
   information_criteria: Record<string, { aic: number; aicc: number; bic: number }>;
   prediction_formulas: Record<string, string>;

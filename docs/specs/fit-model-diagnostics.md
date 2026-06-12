@@ -15,6 +15,7 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
 - Save predicted values, residuals, studentized residuals, leverage, and Cook distance back into the active in-memory data table.
 - Display effect leverage chart data from the OLS term tests.
 - Save a clean-room prediction formula expression alongside diagnostic columns.
+- Add lack-of-fit test decomposition when replicated effect settings provide pure-error degrees of freedom.
 
 ## Backend
 
@@ -23,6 +24,7 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
   - `parameter_estimates[response]`: estimate, standard error, t ratio, and two-sided t p-value.
   - `effect_tests[response]`: one-degree effect F tests for each non-intercept term.
   - `effect_leverage[response]`: effect leverage bar-chart rows derived from the same public coefficient t/F tests.
+  - `lack_of_fit[response]`: lack-of-fit and pure-error ANOVA rows when replicated model-effect patterns permit the public F test.
   - `residuals[response]`: actual, predicted, raw residual, studentized residual, leverage, and Cook distance.
   - `information_criteria[response]`: AIC, AICc, and BIC from Gaussian OLS log-likelihood.
 - `prediction_formulas[response]`: deterministic OLS expression for the response's predicted value.
@@ -33,7 +35,7 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
 ## Frontend
 
 - The Fit Model output keeps the existing Prediction Profiler and appends a response-specific diagnostics panel.
-- The top-left report red triangle menu uses grouped actions for Fit Summary, ANOVA, Parameter Estimates, Effect Tests, Effect Leverage, AICc, Factor Profiler, row diagnostic plots, and saved prediction/diagnostic columns.
+- The top-left report red triangle menu uses grouped actions for Fit Summary, ANOVA, Parameter Estimates, Effect Tests, Effect Leverage, Lack of Fit, AICc, Factor Profiler, row diagnostic plots, and saved prediction/diagnostic columns.
 - Default launch behavior now chooses a numeric effect even when Graph Builder's X role contains a timestamp, so the sample dataset can run Fit Model immediately.
 
 ## Validation

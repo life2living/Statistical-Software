@@ -20,6 +20,7 @@ def test_save_fit_model_diagnostics_can_include_prediction_formula_column() -> N
     run = run_response.json()
     assert "pressure_bar" in run["prediction_formulas"]
     assert run["effect_leverage"]["pressure_bar"]
+    assert run["lack_of_fit"]["pressure_bar"]["status"] in {"ok", "not_estimable"}
 
     save_response = client.post(
         "/fit-model/save-diagnostics",

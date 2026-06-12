@@ -158,6 +158,7 @@ class FitModelRun(BaseModel):
     parameter_estimates: dict[str, list[dict[str, Any]]]
     effect_tests: dict[str, list[dict[str, Any]]]
     effect_leverage: dict[str, list[dict[str, Any]]]
+    lack_of_fit: dict[str, dict[str, Any]]
     residuals: dict[str, list[dict[str, float]]]
     information_criteria: dict[str, dict[str, float]]
     prediction_formulas: dict[str, str]

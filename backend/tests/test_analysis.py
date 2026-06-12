@@ -94,6 +94,7 @@ def test_fit_standard_least_squares_profiler() -> None:
     assert round(result["parameter_estimates"]["y"][1]["estimate"], 6) == 2.0
     assert result["prediction_formulas"]["y"].startswith("y Predicted =")
     assert result["effect_leverage"]["y"][0]["effect"] == "x"
+    assert result["lack_of_fit"]["y"]["status"] == "not_estimable"
     assert result["information_criteria"]["y"]["aicc"] <= result["information_criteria"]["y"]["aic"] + 100
     assert len(result["residuals"]["y"]) == 4
     assert result["residuals"]["y"][0]["cook"] >= 0
@@ -116,6 +117,26 @@ def test_fit_standard_least_squares_reports_nonperfect_model_diagnostics() -> No
     assert result["parameter_estimates"]["y"][1]["stderr"] > 0
     assert result["effect_tests"]["y"][0]["effect"] == "x"
     assert any(abs(row["residual"]) > 0 for row in result["residuals"]["y"])
+
+
+def test_fit_standard_least_squares_lack_of_fit_with_replicates() -> None:
+    rows = [
+        {"x": 1.0, "y": 1.0},
+        {"x": 1.0, "y": 2.0},
+        {"x": 2.0, "y": 2.0},
+        {"x": 2.0, "y": 3.0},
+        {"x": 3.0, "y": 10.0},
+        {"x": 3.0, "y": 11.0},
+    ]
+    result = fit_standard_least_squares(rows, responses=["y"], effects=["x"])
+    lack = result["lack_of_fit"]["y"]
+
+    assert lack["status"] == "ok"
+    assert lack["replicated_points"] == 3.0
+    assert lack["rows"][0]["source"] == "Lack of Fit"
+    assert lack["rows"][0]["df"] == 1.0
+    assert lack["rows"][1]["source"] == "Pure Error"
+    assert lack["rows"][1]["df"] == 3.0
 
 
 def test_distribution_skips_missing_values() -> None:

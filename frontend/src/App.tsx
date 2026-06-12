@@ -1301,6 +1301,7 @@ function FitModelReport({
   showParameters,
   showEffects,
   showEffectLeverage,
+  showLackOfFit,
   showAicc,
   showResiduals,
   diagnosticMode,
@@ -1313,6 +1314,7 @@ function FitModelReport({
   showParameters: boolean;
   showEffects: boolean;
   showEffectLeverage: boolean;
+  showLackOfFit: boolean;
   showAicc: boolean;
   showResiduals: boolean;
   diagnosticMode: "residual" | "actual";
@@ -1365,6 +1367,7 @@ function FitModelReport({
   const criteria = run.information_criteria[response];
   const formula = run.prediction_formulas[response];
   const effectLeverageRows = run.effect_leverage[response] ?? [];
+  const lackOfFit = run.lack_of_fit[response];
   const residualRows = run.residuals[response] ?? [];
   return (
     <section className="fit-model-diagnostics">
@@ -1475,6 +1478,34 @@ function FitModelReport({
             </table>
           </div>
         </>
+      ) : null}
+
+      {showLackOfFit ? (
+        <div className="residual-table">
+          {lackOfFit?.status === "ok" ? (
+            <table>
+              <thead><tr><th>Source</th><th>DF</th><th>SS</th><th>MS</th><th>F Ratio</th><th>Prob &gt; F</th></tr></thead>
+              <tbody>
+                {lackOfFit.rows.map((row) => (
+                  <tr key={row.source}>
+                    <td>{row.source}</td>
+                    <td>{row.df.toFixed(0)}</td>
+                    <td>{row.sum_squares.toFixed(6)}</td>
+                    <td>{row.mean_square.toFixed(6)}</td>
+                    <td>{row.f_ratio === null ? "" : row.f_ratio.toFixed(6)}</td>
+                    <td>{row.p_value === null ? "" : row.p_value.toFixed(6)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="fit-summary-grid">
+              <span>Status <strong>Not estimable</strong></span>
+              <span>Distinct X Patterns <strong>{lackOfFit?.distinct_points.toFixed(0) ?? "0"}</strong></span>
+              <span>Replicated Patterns <strong>{lackOfFit?.replicated_points.toFixed(0) ?? "0"}</strong></span>
+            </div>
+          )}
+        </div>
       ) : null}
 
       {showResiduals ? (
@@ -1616,6 +1647,7 @@ export default function App() {
   const [showFitModelParameters, setShowFitModelParameters] = useState(true);
   const [showFitModelEffects, setShowFitModelEffects] = useState(false);
   const [showFitModelEffectLeverage, setShowFitModelEffectLeverage] = useState(false);
+  const [showFitModelLackOfFit, setShowFitModelLackOfFit] = useState(false);
   const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
@@ -2270,7 +2302,7 @@ export default function App() {
                         <button onClick={() => setShowFitModelEffects((show) => !show)}>{showFitModelEffects ? "Hide Effect Tests" : "Effect Tests"}</button>
                         <button onClick={() => setShowFitModelEffectLeverage((show) => !show)}>{showFitModelEffectLeverage ? "Hide Effect Leverage" : "Effect Leverage"}</button>
                         <button onClick={() => setShowFitModelAicc((show) => !show)}>{showFitModelAicc ? "Hide AICc" : "AICc"}</button>
-                        <button disabled>Lack of Fit</button>
+                        <button onClick={() => setShowFitModelLackOfFit((show) => !show)}>{showFitModelLackOfFit ? "Hide Lack of Fit" : "Lack of Fit"}</button>
                         <div className="red-menu-section">Profilers</div>
                         <button onClick={() => setShowFitModelProfiler((show) => !show)}>{showFitModelProfiler ? "Hide Factor Profiler" : "Factor Profiler"}</button>
                         <button disabled>Contour Profiler</button>
@@ -2331,6 +2363,7 @@ export default function App() {
                   showParameters={showFitModelParameters}
                   showEffects={showFitModelEffects}
                   showEffectLeverage={showFitModelEffectLeverage}
+                  showLackOfFit={showFitModelLackOfFit}
                   showAicc={showFitModelAicc}
                   showResiduals={showFitModelResiduals}
                   diagnosticMode={fitModelDiagnosticMode}

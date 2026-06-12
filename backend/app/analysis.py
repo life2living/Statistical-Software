@@ -686,6 +686,7 @@ def fit_standard_least_squares(
     parameter_estimates: dict[str, list[dict[str, Any]]] = {}
     effect_tests: dict[str, list[dict[str, Any]]] = {}
     effect_leverage: dict[str, list[dict[str, Any]]] = {}
+    lack_of_fit: dict[str, dict[str, Any]] = {}
     residual_diagnostics: dict[str, list[dict[str, float]]] = {}
     information_criteria: dict[str, dict[str, float]] = {}
     prediction_formulas: dict[str, str] = {}
@@ -724,6 +725,7 @@ def fit_standard_least_squares(
         prediction_formulas[response] = format_prediction_formula(response, coefficients[response])
         metrics[response] = {"r2": r2, "adj_r2": adj_r2, "rmse": rmse, "n": float(n), "terms": float(p), "sse": sse, "sst": sst, "mse": mse}
         information_criteria[response] = {"aic": aic, "aicc": aicc, "bic": bic}
+        lack_of_fit[response] = lack_of_fit_test(design, y, sse, p)
         anova[response] = [
             {"source": "Model", "df": float(df_model), "sum_squares": ss_model, "mean_square": ms_model, "f_ratio": f_ratio, "p_value": f_p_value},
             {"source": "Error", "df": float(df_error), "sum_squares": sse, "mean_square": mse, "f_ratio": None, "p_value": None},
@@ -782,11 +784,53 @@ def fit_standard_least_squares(
         "parameter_estimates": parameter_estimates,
         "effect_tests": effect_tests,
         "effect_leverage": effect_leverage,
+        "lack_of_fit": lack_of_fit,
         "residuals": residual_diagnostics,
         "information_criteria": information_criteria,
         "prediction_formulas": prediction_formulas,
         "profiler_effects": profiler_effects,
         "profiler": profiler,
+    }
+
+
+def lack_of_fit_test(design: list[list[float]], y: list[float], sse: float, parameter_count: int) -> dict[str, Any]:
+    groups: dict[tuple[float, ...], list[float]] = {}
+    for vector, actual in zip(design, y):
+        key = tuple(round(value, 12) for value in vector)
+        groups.setdefault(key, []).append(actual)
+
+    pure_error_ss = 0.0
+    pure_error_df = 0
+    for values in groups.values():
+        if len(values) < 2:
+            continue
+        group_mean = mean(values)
+        pure_error_ss += sum((value - group_mean) ** 2 for value in values)
+        pure_error_df += len(values) - 1
+
+    distinct_points = len(groups)
+    lack_df = distinct_points - parameter_count
+    if pure_error_df <= 0 or lack_df <= 0 or pure_error_ss <= 0:
+        return {
+            "status": "not_estimable",
+            "distinct_points": float(distinct_points),
+            "replicated_points": float(sum(1 for values in groups.values() if len(values) > 1)),
+            "rows": [],
+        }
+
+    lack_ss = max(0.0, sse - pure_error_ss)
+    lack_ms = lack_ss / lack_df
+    pure_error_ms = pure_error_ss / pure_error_df
+    f_ratio = lack_ms / pure_error_ms if pure_error_ms > 0 else None
+    p_value = float(stats.f.sf(f_ratio, lack_df, pure_error_df)) if f_ratio is not None else None
+    return {
+        "status": "ok",
+        "distinct_points": float(distinct_points),
+        "replicated_points": float(sum(1 for values in groups.values() if len(values) > 1)),
+        "rows": [
+            {"source": "Lack of Fit", "df": float(lack_df), "sum_squares": lack_ss, "mean_square": lack_ms, "f_ratio": f_ratio, "p_value": p_value},
+            {"source": "Pure Error", "df": float(pure_error_df), "sum_squares": pure_error_ss, "mean_square": pure_error_ms, "f_ratio": None, "p_value": None},
+        ],
     }
 
 

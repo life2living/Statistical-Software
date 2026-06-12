@@ -25,7 +25,8 @@
 - [x] Fit Model ANOVA tables, term effects, parameter estimates, and residual diagnostics.
 - [x] Fit Model red triangle menu expansion with Factor Profiler toggle, AICc, and saved diagnostic columns.
 - [x] Fit Model effect leverage plots and prediction formula columns.
-- [ ] Fit Model lack-of-fit, richer profiler options, desirability, confidence intervals, and formula-column execution.
+- [x] Fit Model lack-of-fit test with pure-error decomposition.
+- [ ] Fit Model richer profiler options, desirability, confidence intervals, and formula-column execution.
 - [ ] Tabulate platform for grouped summary tables.
 - [ ] Pareto, Gauge R&R, Variability Chart, and measurement system analysis.
 

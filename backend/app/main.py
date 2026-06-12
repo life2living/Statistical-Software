@@ -293,6 +293,7 @@ def run_fit_model(request: FitModelRequest) -> FitModelRun:
         parameter_estimates=result["parameter_estimates"],
         effect_tests=result["effect_tests"],
         effect_leverage=result["effect_leverage"],
+        lack_of_fit=result["lack_of_fit"],
         residuals=result["residuals"],
         information_criteria=result["information_criteria"],
         prediction_formulas=result["prediction_formulas"],
