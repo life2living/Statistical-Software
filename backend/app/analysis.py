@@ -774,7 +774,7 @@ def fit_standard_least_squares(
                     "cook": cook,
                 }
             )
-        profiler[response] = build_profiler_curves(beta, effects, include_quadratic, profiler_effects, baseline)
+        profiler[response] = build_profiler_curves(beta, effects, include_quadratic, profiler_effects, baseline, inverse_xtx, mse, df_error)
 
     return {
         "terms": terms,
@@ -861,8 +861,12 @@ def build_profiler_curves(
     include_quadratic: bool,
     profiler_effects: list[dict[str, float | str]],
     baseline: dict[str, float],
+    inverse_xtx: list[list[float]],
+    mse: float,
+    df_error: int,
 ) -> dict[str, list[dict[str, float]]]:
     curves: dict[str, list[dict[str, float]]] = {}
+    t_critical = float(stats.t.ppf(0.975, df_error)) if df_error > 0 else 0.0
     for effect_info in profiler_effects:
         effect = str(effect_info["name"])
         low = float(effect_info["min"])
@@ -873,7 +877,12 @@ def build_profiler_curves(
             x_value = low if high == low else low + (high - low) * index / step_count
             values = dict(baseline)
             values[effect] = x_value
-            points.append({"x": x_value, "y": dot(beta, model_vector(values, effects, include_quadratic))})
+            vector = model_vector(values, effects, include_quadratic)
+            prediction = dot(beta, vector)
+            # Public OLS mean-response confidence interval: yhat +/- t * sqrt(MSE * x0'(X'X)^-1x0).
+            variance = mse * dot(vector, matrix_vector_product(inverse_xtx, vector)) if inverse_xtx else 0.0
+            margin = t_critical * sqrt(max(0.0, variance))
+            points.append({"x": x_value, "y": prediction, "lower95": prediction - margin, "upper95": prediction + margin})
         curves[effect] = points
     return curves
 

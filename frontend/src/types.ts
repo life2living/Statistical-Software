@@ -268,6 +268,6 @@ export interface FitModelRun {
   information_criteria: Record<string, { aic: number; aicc: number; bic: number }>;
   prediction_formulas: Record<string, string>;
   profiler_effects: ProfilerEffect[];
-  profiler: Record<string, Record<string, { x: number; y: number }[]>>;
+  profiler: Record<string, Record<string, { x: number; y: number; lower95?: number; upper95?: number }[]>>;
   status: "completed" | "failed";
 }

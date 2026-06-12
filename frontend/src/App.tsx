@@ -298,6 +298,37 @@ function predictFit(run: FitModelRun, response: string, values: Record<string, n
 }
 
 function buildProfilerOption(run: FitModelRun, response: string, values: Record<string, number>): EChartsOption {
+  const series = run.effects.flatMap((effect) => {
+    const points = run.profiler[response]?.[effect] ?? [];
+    return [
+      {
+        type: "line" as const,
+        name: effect,
+        smooth: true,
+        data: points.map((point) => [point.x, point.y]),
+        markLine: {
+          symbol: "none",
+          data: [{ xAxis: values[effect], lineStyle: { color: "#dc2626", type: "dashed" }, label: { formatter: effect } }]
+        }
+      },
+      {
+        type: "line" as const,
+        name: `${effect} Lower 95%`,
+        symbol: "none",
+        smooth: true,
+        data: points.map((point) => [point.x, point.lower95 ?? point.y]),
+        lineStyle: { type: "dashed", opacity: 0.5 }
+      },
+      {
+        type: "line" as const,
+        name: `${effect} Upper 95%`,
+        symbol: "none",
+        smooth: true,
+        data: points.map((point) => [point.x, point.upper95 ?? point.y]),
+        lineStyle: { type: "dashed", opacity: 0.5 }
+      }
+    ];
+  });
   return {
     animation: false,
     tooltip: { trigger: "axis" },
@@ -305,16 +336,7 @@ function buildProfilerOption(run: FitModelRun, response: string, values: Record<
     grid: { left: 60, right: 24, top: 44, bottom: 42 },
     xAxis: { type: "value", name: "Effect value" },
     yAxis: { type: "value", name: response },
-    series: run.effects.map((effect) => ({
-      type: "line",
-      name: effect,
-      smooth: true,
-      data: run.profiler[response]?.[effect]?.map((point) => [point.x, point.y]) ?? [],
-      markLine: {
-        symbol: "none",
-        data: [{ xAxis: values[effect], lineStyle: { color: "#dc2626", type: "dashed" }, label: { formatter: effect } }]
-      }
-    })) as SeriesOption[]
+    series: series as SeriesOption[]
   };
 }
 

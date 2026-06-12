@@ -26,13 +26,14 @@
 - [x] Fit Model red triangle menu expansion with Factor Profiler toggle, AICc, and saved diagnostic columns.
 - [x] Fit Model effect leverage plots and prediction formula columns.
 - [x] Fit Model lack-of-fit test with pure-error decomposition.
-- [ ] Fit Model richer profiler options, desirability, confidence intervals, and formula-column execution.
+- [x] Prediction Profiler mean-response confidence intervals.
+- [ ] Fit Model richer profiler options, desirability, lock factors, and formula-column execution.
 - [ ] Tabulate platform for grouped summary tables.
 - [ ] Pareto, Gauge R&R, Variability Chart, and measurement system analysis.
 
 ## P2 Modeling And Quality Workflows
 
-- [ ] Prediction Profiler refinements: desirability, lock factors, confidence intervals.
+- [ ] Prediction Profiler refinements: desirability and lock factors.
 - [ ] Model comparison and validation splits.
 - [ ] DOE import/generation workflow.
 - [ ] Reliability/survival first slice.

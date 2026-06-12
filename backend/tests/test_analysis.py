@@ -88,6 +88,8 @@ def test_fit_standard_least_squares_profiler() -> None:
     assert round(result["coefficients"]["y"]["x"], 6) == 2.0
     assert round(result["metrics"]["y"]["r2"], 6) == 1.0
     assert len(result["profiler"]["y"]["x"]) == 25
+    assert result["profiler"]["y"]["x"][0]["lower95"] <= result["profiler"]["y"]["x"][0]["y"]
+    assert result["profiler"]["y"]["x"][0]["upper95"] >= result["profiler"]["y"]["x"][0]["y"]
     assert result["anova"]["y"][0]["source"] == "Model"
     assert round(result["anova"]["y"][0]["sum_squares"], 6) == 20.0
     assert result["parameter_estimates"]["y"][1]["term"] == "x"

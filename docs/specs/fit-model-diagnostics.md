@@ -16,6 +16,7 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
 - Display effect leverage chart data from the OLS term tests.
 - Save a clean-room prediction formula expression alongside diagnostic columns.
 - Add lack-of-fit test decomposition when replicated effect settings provide pure-error degrees of freedom.
+- Add 95% mean-response confidence limits to Factor Profiler curves using public OLS covariance formulas.
 
 ## Backend
 
@@ -27,7 +28,8 @@ Observed the Fit Model launch workflow with `data.xlsx` by assigning `EDAselecti
   - `lack_of_fit[response]`: lack-of-fit and pure-error ANOVA rows when replicated model-effect patterns permit the public F test.
   - `residuals[response]`: actual, predicted, raw residual, studentized residual, leverage, and Cook distance.
   - `information_criteria[response]`: AIC, AICc, and BIC from Gaussian OLS log-likelihood.
-- `prediction_formulas[response]`: deterministic OLS expression for the response's predicted value.
+  - `prediction_formulas[response]`: deterministic OLS expression for the response's predicted value.
+  - `profiler[response][effect]`: profiler curve points with `y`, `lower95`, and `upper95`.
 - `POST /fit-model/save-diagnostics` writes row diagnostics from a Fit Model run back to the source dataset and refreshes column profiles. When `include_formula` is true, it also adds a prediction formula string column.
 - Math uses ordinary least squares normal equations. Probability calculations use SciPy survival functions for F and t distributions.
 - Missing rows are excluded per response/effect complete-case filtering.
