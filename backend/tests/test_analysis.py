@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary
+from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
 
 
 ROWS = [
@@ -159,6 +159,21 @@ def test_gauge_rr_crossed_returns_variance_components() -> None:
     assert result["replicates"] == 2.0
     assert result["metrics"]["gauge_rr_percent_study_variation"] < 30.0
     assert result["metrics"]["ndc"] > 5.0
+
+
+def test_variability_chart_returns_group_summaries() -> None:
+    rows = [
+        {"batch": "A", "line": "L1", "y": 10.0},
+        {"batch": "A", "line": "L1", "y": 12.0},
+        {"batch": "B", "line": "L1", "y": 20.0},
+        {"batch": "B", "line": "L1", "y": 24.0},
+    ]
+    result = variability_chart(rows, "y", "batch", by_column="line")
+
+    assert result["n"] == 4.0
+    assert len(result["groups"]) == 2
+    assert result["groups"][0]["mean"] == 11.0
+    assert round(result["groups"][1]["std"], 6) == 2.828427
 
 
 def test_process_capability() -> None:

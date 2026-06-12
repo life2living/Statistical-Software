@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun } from "./types";
+import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun, VariabilityRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -97,6 +97,18 @@ export function runGaugeRR(datasetId: string, measurement: string, roles: { part
       dataset_id: datasetId,
       method: "gauge_rr",
       columns: [measurement],
+      parameters: roles
+    })
+  });
+}
+
+export function runVariabilityChart(datasetId: string, y: string, roles: { x?: string | null; by?: string | null }): Promise<VariabilityRun> {
+  return request<VariabilityRun>("/analysis/run", {
+    method: "POST",
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      method: "variability_chart",
+      columns: [y],
       parameters: roles
     })
   });

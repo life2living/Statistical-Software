@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, saveChart, saveFitModelDiagnostics } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun } from "./types";
+import { importDataset, listDatasets, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun, VariabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -774,6 +774,36 @@ function buildGaugeRROption(run: GaugeRRRun): EChartsOption {
       data: components.map((component) => component.contribution_percent),
       itemStyle: { color: "#0f766e" }
     }] as SeriesOption[]
+  };
+}
+
+function buildVariabilityOption(run: VariabilityRun, showMeans: boolean): EChartsOption {
+  const result = run.outputs.variability_chart;
+  const categories = result.groups.map((group) => group.x);
+  const points = result.points.map((point) => [point.x, point.value, point.rowIndex]);
+  return {
+    animation: false,
+    tooltip: { trigger: "axis" },
+    legend: { top: 0 },
+    grid: { left: 70, right: 32, top: 46, bottom: 70 },
+    xAxis: { type: "category", data: categories, axisLabel: { interval: 0, rotate: 25 } },
+    yAxis: { type: "value", name: result.y },
+    series: [
+      {
+        type: "scatter",
+        name: "Measurements",
+        data: points,
+        symbolSize: 7
+      },
+      ...(showMeans ? [{
+        type: "line" as const,
+        name: "Group Mean",
+        data: result.groups.map((group) => group.mean),
+        step: "middle" as const,
+        lineStyle: { color: "#dc2626" },
+        itemStyle: { color: "#dc2626" }
+      }] : [])
+    ] as SeriesOption[]
   };
 }
 
@@ -1763,6 +1793,89 @@ function GaugeRRReport({
   );
 }
 
+function VariabilityReport({
+  run,
+  menuOpen,
+  showMeans,
+  onToggleMenu,
+  onToggleMeans
+}: {
+  run: VariabilityRun | null;
+  menuOpen: boolean;
+  showMeans: boolean;
+  onToggleMenu: () => void;
+  onToggleMeans: () => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!hostRef.current || !run) return;
+    if (chartRef.current) chartRef.current.dispose();
+    chartRef.current = echarts.init(hostRef.current);
+    const resize = () => chartRef.current?.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chartRef.current?.dispose();
+      chartRef.current = null;
+    };
+  }, [run]);
+
+  useEffect(() => {
+    if (!chartRef.current || !run) return;
+    chartRef.current.setOption(buildVariabilityOption(run, showMeans), true);
+  }, [run, showMeans]);
+
+  if (!run) {
+    return (
+      <section className="fit-y-report-window">
+        <p>Assign Y and X grouping columns, then click Run.</p>
+      </section>
+    );
+  }
+
+  const result = run.outputs.variability_chart;
+  return (
+    <section className="fit-y-report-window">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Variability options">▶</button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onToggleMeans}>{showMeans ? "Hide Mean Line" : "Show Mean Line"}</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>Variability Chart of {result.y}</h3>
+        <span>{result.n.toFixed(0)} rows, {result.groups.length} groups</span>
+      </div>
+      <div className="fit-y-stats">
+        <span>Overall Mean {result.overall.mean.toFixed(6)}</span>
+        <span>Std Dev {result.overall.std.toFixed(6)}</span>
+        <span>Range {result.overall.range.toFixed(6)}</span>
+      </div>
+      <div ref={hostRef} className="fit-y-chart control-chart-builder" />
+      <div className="residual-table">
+        <table>
+          <thead><tr><th>{result.x}</th><th>N</th><th>Mean</th><th>Std Dev</th><th>Range</th></tr></thead>
+          <tbody>
+            {result.groups.map((group) => (
+              <tr key={`${group.by}-${group.x}`}>
+                <td>{group.x}</td>
+                <td>{group.n.toFixed(0)}</td>
+                <td>{group.mean.toFixed(6)}</td>
+                <td>{group.std.toFixed(6)}</td>
+                <td>{group.range.toFixed(6)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function FitModelReport({
   run,
   response,
@@ -2124,7 +2237,7 @@ export default function App() {
   const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR" | "variability">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -2155,6 +2268,12 @@ export default function App() {
   const [gaugeRun, setGaugeRun] = useState<GaugeRRRun | null>(null);
   const [gaugeMenuOpen, setGaugeMenuOpen] = useState(false);
   const [showGaugeAnova, setShowGaugeAnova] = useState(true);
+  const [variabilityY, setVariabilityY] = useState<string | null>(null);
+  const [variabilityX, setVariabilityX] = useState<string | null>(null);
+  const [variabilityBy, setVariabilityBy] = useState<string | null>(null);
+  const [variabilityRun, setVariabilityRun] = useState<VariabilityRun | null>(null);
+  const [variabilityMenuOpen, setVariabilityMenuOpen] = useState(false);
+  const [showVariabilityMeans, setShowVariabilityMeans] = useState(true);
   const [showTabulateCount, setShowTabulateCount] = useState(true);
   const [showTabulateMean, setShowTabulateMean] = useState(true);
   const [showTabulateStd, setShowTabulateStd] = useState(true);
@@ -2243,6 +2362,11 @@ export default function App() {
     setGaugeOperator(null);
     setGaugeRun(null);
     setGaugeMenuOpen(false);
+    setVariabilityY(null);
+    setVariabilityX(null);
+    setVariabilityBy(null);
+    setVariabilityRun(null);
+    setVariabilityMenuOpen(false);
     setFitYResponse(null);
     setFitXFactor(null);
     setFitYByXRun(null);
@@ -2585,6 +2709,28 @@ export default function App() {
     setAnalyzeMenuOpen(false);
   }
 
+  async function handleVariability() {
+    if (!preview || !variabilityY || !variabilityX) {
+      setStatus("Variability Chart requires Y and X grouping roles.");
+      return;
+    }
+    const result = await runVariabilityChart(preview.dataset.id, variabilityY, { x: variabilityX, by: variabilityBy });
+    setVariabilityRun(result);
+    setVariabilityMenuOpen(true);
+    setStatus(`Variability Chart ${result.id}: ${variabilityY} by ${variabilityX}.`);
+  }
+
+  function openVariabilityPlatform() {
+    if (!variabilityY) {
+      setVariabilityY(zones.y.find((field) => numericColumns.includes(field)) ?? numericColumns[0] ?? null);
+    }
+    if (!variabilityX) {
+      setVariabilityX(groupingColumns.find((field) => field.toLowerCase().includes("batch")) ?? groupingColumns[0] ?? null);
+    }
+    setActiveAnalyzePlatform("variability");
+    setAnalyzeMenuOpen(false);
+  }
+
   async function handleMultivariate() {
     if (!preview) return;
     const columnsForRun = multivariateY.length > 1 ? multivariateY : numericColumns.slice(0, 4);
@@ -2760,7 +2906,7 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "gaugeRR" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "gaugeRR" || activeAnalyzePlatform === "variability" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
@@ -2780,6 +2926,7 @@ export default function App() {
                 <button onClick={openControlChartPlatform}>Control Chart Builder</button>
                 <button onClick={openCapabilityPlatform}>Process Capability</button>
                 <button onClick={openGaugeRRPlatform}>Gauge R&amp;R</button>
+                <button onClick={openVariabilityPlatform}>Variability Chart</button>
               </div>
             ) : null}
           </div>
@@ -2794,7 +2941,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "variability" ? "Variability Chart" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : "Graph Builder"}</strong>
         <span>{status}</span>
       </section>
 
@@ -3277,6 +3424,74 @@ export default function App() {
             showAnova={showGaugeAnova}
             onToggleMenu={() => setGaugeMenuOpen((open) => !open)}
             onToggleAnova={() => setShowGaugeAnova((show) => !show)}
+          />
+        </section>
+      ) : activeAnalyzePlatform === "variability" ? (
+        <section className="distribution-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Assign Roles</h3>
+              <DistributionRoleDrop
+                label="Y"
+                values={variabilityY ? [variabilityY] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setVariabilityY(field)}
+                onRemove={() => setVariabilityY(null)}
+              />
+              <DistributionRoleDrop
+                label="X"
+                values={variabilityX ? [variabilityX] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setVariabilityX(field)}
+                onRemove={() => setVariabilityX(null)}
+              />
+              <DistributionRoleDrop
+                label="By"
+                values={variabilityBy ? [variabilityBy] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setVariabilityBy(field)}
+                onRemove={() => setVariabilityBy(null)}
+              />
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleVariability}>Run</button>
+            <button onClick={() => {
+              setVariabilityY(null);
+              setVariabilityX(null);
+              setVariabilityBy(null);
+              setVariabilityRun(null);
+              setVariabilityMenuOpen(false);
+            }}>
+              Remove
+            </button>
+            <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
+          </aside>
+
+          <VariabilityReport
+            run={variabilityRun}
+            menuOpen={variabilityMenuOpen}
+            showMeans={showVariabilityMeans}
+            onToggleMenu={() => setVariabilityMenuOpen((open) => !open)}
+            onToggleMeans={() => setShowVariabilityMeans((show) => !show)}
           />
         </section>
       ) : activeAnalyzePlatform === "multivariate" ? (

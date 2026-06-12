@@ -734,6 +734,67 @@ def gauge_rr_crossed(
     }
 
 
+def variability_chart(
+    rows: list[dict[str, Any]],
+    y_column: str,
+    x_column: str,
+    by_column: str | None = None,
+) -> dict[str, Any]:
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    missing = 0
+    for row_index, row in enumerate(rows):
+        value = row.get(y_column)
+        x_value = row.get(x_column)
+        if not is_numeric(value) or x_value in {None, ""}:
+            missing += 1
+            continue
+        by_value = str(row.get(by_column) if by_column and row.get(by_column) is not None else "All")
+        key = (by_value, str(x_value))
+        groups.setdefault(key, []).append({"rowIndex": row_index, "value": float(value)})
+
+    if not groups:
+        raise ValueError("Variability Chart requires at least one numeric Y value and one grouping value.")
+
+    output_groups = []
+    points = []
+    for (by_value, x_value), items in sorted(groups.items(), key=lambda item: item[0]):
+        values = [item["value"] for item in items]
+        group_mean = mean(values)
+        group_std = stdev(values) if len(values) > 1 else 0.0
+        group_range = max(values) - min(values)
+        output_groups.append(
+            {
+                "by": by_value,
+                "x": x_value,
+                "n": float(len(values)),
+                "mean": group_mean,
+                "std": group_std,
+                "min": min(values),
+                "max": max(values),
+                "range": group_range,
+            }
+        )
+        for item in items:
+            points.append({**item, "by": by_value, "x": x_value, "mean": group_mean})
+
+    all_values = [point["value"] for point in points]
+    # Variability summaries use public descriptive statistics: sample standard deviation and range.
+    return {
+        "y": y_column,
+        "x": x_column,
+        "by": by_column,
+        "n": float(len(points)),
+        "missing": float(missing),
+        "overall": {
+            "mean": mean(all_values),
+            "std": stdev(all_values) if len(all_values) > 1 else 0.0,
+            "range": max(all_values) - min(all_values),
+        },
+        "groups": output_groups,
+        "points": sorted(points, key=lambda point: point["rowIndex"]),
+    }
+
+
 def distribution_group_summary(
     group_name: str,
     rows: list[dict[str, Any]],

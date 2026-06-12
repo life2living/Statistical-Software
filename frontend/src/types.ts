@@ -136,6 +136,22 @@ export interface GaugeRRRun extends AnalysisRun {
   };
 }
 
+export interface VariabilityRun extends AnalysisRun {
+  method: "variability_chart";
+  outputs: {
+    variability_chart: {
+      y: string;
+      x: string;
+      by: string | null;
+      n: number;
+      missing: number;
+      overall: { mean: number; std: number; range: number };
+      groups: { by: string; x: string; n: number; mean: number; std: number; min: number; max: number; range: number }[];
+      points: { rowIndex: number; by: string; x: string; value: number; mean: number }[];
+    };
+  };
+}
+
 export interface FitYByXRun extends AnalysisRun {
   method: "fit_y_by_x";
   outputs: {
