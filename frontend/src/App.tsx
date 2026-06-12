@@ -1748,8 +1748,9 @@ function GaugeRRReport({
           ) : null}
         </div>
         <h3>Gauge R&amp;R of {result.measurement}</h3>
-        <span>{result.part_count.toFixed(0)} parts, {result.operator_count.toFixed(0)} operators, {result.replicates.toFixed(0)} repeats</span>
+        <span>{result.part_count.toFixed(0)} parts, {result.operator_count.toFixed(0)} operators, {result.replicates.toFixed(0)} repeats · {result.design.method === "crossed_anova" ? "Crossed ANOVA" : "Range fallback"}</span>
       </div>
+      {result.design.warning ? <p className="report-note">Balanced crossed ANOVA was not available; using range fallback because of {result.design.warning.replace("_", " ")}.</p> : null}
       <div className="fit-y-stats">
         <span>Gauge R&amp;R {result.metrics.gauge_rr_percent_study_variation.toFixed(2)}% SV</span>
         <span>Part-To-Part {result.metrics.part_to_part_percent_study_variation.toFixed(2)}% SV</span>
@@ -1777,7 +1778,9 @@ function GaugeRRReport({
           <table>
             <thead><tr><th>Source</th><th>DF</th><th>SS</th><th>MS</th></tr></thead>
             <tbody>
-              {result.anova.map((row) => (
+              {result.anova.length === 0 ? (
+                <tr><td colSpan={4}>ANOVA table requires a balanced crossed design.</td></tr>
+              ) : result.anova.map((row) => (
                 <tr key={row.source}>
                   <td>{row.source}</td>
                   <td>{row.df.toFixed(0)}</td>
@@ -1789,6 +1792,23 @@ function GaugeRRReport({
           </table>
         </div>
       ) : null}
+      <div className="residual-table">
+        <table>
+          <thead><tr><th>Part</th><th>Operator</th><th>N</th><th>Mean</th><th>Std Dev</th><th>Range</th></tr></thead>
+          <tbody>
+            {result.cell_summaries.map((cell) => (
+              <tr key={`${cell.part}-${cell.operator}`}>
+                <td>{cell.part}</td>
+                <td>{cell.operator}</td>
+                <td>{cell.n.toFixed(0)}</td>
+                <td>{cell.mean.toFixed(6)}</td>
+                <td>{cell.std.toFixed(6)}</td>
+                <td>{cell.range.toFixed(6)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

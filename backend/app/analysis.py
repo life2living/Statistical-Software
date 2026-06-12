@@ -633,11 +633,12 @@ def gauge_rr_crossed(
     operators = sorted({operator for _, operator in cells})
     if len(parts) < 2 or len(operators) < 2:
         raise ValueError("Gauge R&R requires at least two parts and two operators.")
-    if any((part, operator) not in cells for part in parts for operator in operators):
-        raise ValueError("Gauge R&R crossed analysis requires every part/operator combination.")
+    missing_cells = [(part, operator) for part in parts for operator in operators if (part, operator) not in cells]
+    if missing_cells:
+        return gauge_rr_range_fallback(cells, parts, operators, measurement_column, part_column, operator_column, missing, "missing_cells")
     replicate_count = min(len(cells[(part, operator)]) for part in parts for operator in operators)
     if replicate_count < 2:
-        raise ValueError("Gauge R&R requires at least two repeated measurements per part/operator cell.")
+        return gauge_rr_range_fallback(cells, parts, operators, measurement_column, part_column, operator_column, missing, "insufficient_repeats")
 
     values: list[dict[str, Any]] = []
     for part in parts:
@@ -724,7 +725,100 @@ def gauge_rr_crossed(
         "part_count": float(p),
         "operator_count": float(o),
         "replicates": float(r),
+        "design": {"method": "crossed_anova", "balanced": True, "warning": None},
+        "cell_summaries": gauge_rr_cell_summaries(cells),
         "anova": anova_rows,
+        "components": components,
+        "metrics": {
+            "gauge_rr_percent_study_variation": next(item["study_variation_percent"] for item in components if item["source"] == "Total Gauge R&R"),
+            "part_to_part_percent_study_variation": next(item["study_variation_percent"] for item in components if item["source"] == "Part-To-Part"),
+            "ndc": 1.41 * part_stddev / gauge_stddev if gauge_stddev > 0 else 0.0,
+        },
+    }
+
+
+def gauge_rr_cell_summaries(cells: dict[tuple[str, str], list[float]]) -> list[dict[str, float | str]]:
+    summaries = []
+    for (part, operator), values in sorted(cells.items()):
+        summaries.append(
+            {
+                "part": part,
+                "operator": operator,
+                "n": float(len(values)),
+                "mean": mean(values),
+                "range": max(values) - min(values),
+                "std": stdev(values) if len(values) > 1 else 0.0,
+            }
+        )
+    return summaries
+
+
+def gauge_rr_range_fallback(
+    cells: dict[tuple[str, str], list[float]],
+    parts: list[str],
+    operators: list[str],
+    measurement_column: str,
+    part_column: str,
+    operator_column: str,
+    missing: int,
+    warning: str,
+) -> dict[str, Any]:
+    values = [value for cell_values in cells.values() for value in cell_values]
+    if len(values) < 2:
+        raise ValueError("Gauge R&R requires at least two valid measurements.")
+    cell_summaries = gauge_rr_cell_summaries(cells)
+    repeatability_values = [summary["std"] for summary in cell_summaries if float(summary["n"]) > 1]
+    repeatability_std = mean(float(value) for value in repeatability_values) if repeatability_values else 0.0
+    part_means = [
+        mean(value for (part, _), cell_values in cells.items() if part == part_name for value in cell_values)
+        for part_name in parts
+    ]
+    operator_means = [
+        mean(value for (_, operator), cell_values in cells.items() if operator == operator_name for value in cell_values)
+        for operator_name in operators
+    ]
+    part_var = stdev(part_means) ** 2 if len(part_means) > 1 else 0.0
+    operator_var = stdev(operator_means) ** 2 if len(operator_means) > 1 else 0.0
+    repeatability_var = repeatability_std**2
+    reproducibility_var = operator_var
+    gauge_var = repeatability_var + reproducibility_var
+    total_var = gauge_var + part_var
+
+    def component(name: str, variance: float) -> dict[str, float | str]:
+        stddev = sqrt(max(0.0, variance))
+        total_stddev = sqrt(max(0.0, total_var))
+        return {
+            "source": name,
+            "variance": variance,
+            "contribution_percent": 100 * variance / total_var if total_var > 0 else 0.0,
+            "stddev": stddev,
+            "study_variation": 6 * stddev,
+            "study_variation_percent": 100 * stddev / total_stddev if total_stddev > 0 else 0.0,
+        }
+
+    components = [
+        component("Total Gauge R&R", gauge_var),
+        component("Repeatability", repeatability_var),
+        component("Reproducibility", reproducibility_var),
+        component("Operator", operator_var),
+        component("Part*Operator", 0.0),
+        component("Part-To-Part", part_var),
+        component("Total Variation", total_var),
+    ]
+    gauge_stddev = sqrt(max(0.0, gauge_var))
+    part_stddev = sqrt(max(0.0, part_var))
+    return {
+        "measurement": measurement_column,
+        "part": part_column,
+        "operator": operator_column,
+        "n": float(len(values)),
+        "missing": float(missing),
+        "part_count": float(len(parts)),
+        "operator_count": float(len(operators)),
+        "replicates": min((float(summary["n"]) for summary in cell_summaries), default=0.0),
+        "design": {"method": "range_fallback", "balanced": False, "warning": warning},
+        "cell_summaries": cell_summaries,
+        "anova": [],
         "components": components,
         "metrics": {
             "gauge_rr_percent_study_variation": next(item["study_variation_percent"] for item in components if item["source"] == "Total Gauge R&R"),

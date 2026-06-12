@@ -34,7 +34,7 @@
 - [x] Pareto platform first slice with Freq, By, cumulative percent, and red-triangle toggle.
 - [x] Gauge R&R crossed ANOVA first slice with variance components and NDC.
 - [x] Variability Chart first slice with Y, X, By, raw points, mean line, and group summaries.
-- [ ] Expanded measurement system analysis.
+- [x] Expanded measurement system analysis fallback and cell summaries.
 
 ## P2 Modeling And Quality Workflows
 

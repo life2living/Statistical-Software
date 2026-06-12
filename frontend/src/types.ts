@@ -129,6 +129,8 @@ export interface GaugeRRRun extends AnalysisRun {
       part_count: number;
       operator_count: number;
       replicates: number;
+      design: { method: "crossed_anova" | "range_fallback"; balanced: boolean; warning: string | null };
+      cell_summaries: { part: string; operator: string; n: number; mean: number; range: number; std: number }[];
       anova: { source: string; df: number; sum_squares: number; mean_square: number }[];
       components: { source: string; variance: number; contribution_percent: number; stddev: number; study_variation: number; study_variation_percent: number }[];
       metrics: { gauge_rr_percent_study_variation: number; part_to_part_percent_study_variation: number; ndc: number };

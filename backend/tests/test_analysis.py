@@ -161,6 +161,22 @@ def test_gauge_rr_crossed_returns_variance_components() -> None:
     assert result["metrics"]["ndc"] > 5.0
 
 
+def test_gauge_rr_unbalanced_data_returns_range_fallback() -> None:
+    rows = [
+        {"part": "P1", "operator": "A", "measurement": 10.0},
+        {"part": "P1", "operator": "A", "measurement": 10.2},
+        {"part": "P2", "operator": "A", "measurement": 13.0},
+        {"part": "P2", "operator": "B", "measurement": 13.4},
+        {"part": "P2", "operator": "B", "measurement": 13.5},
+    ]
+    result = gauge_rr_crossed(rows, "measurement", "part", "operator")
+
+    assert result["design"]["method"] == "range_fallback"
+    assert result["design"]["balanced"] is False
+    assert result["cell_summaries"]
+    assert result["components"][0]["source"] == "Total Gauge R&R"
+
+
 def test_variability_chart_returns_group_summaries() -> None:
     rows = [
         {"batch": "A", "line": "L1", "y": 10.0},
