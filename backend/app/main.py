@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
@@ -20,9 +20,12 @@ from .models import (
     ReportBlock,
     SaveFitDiagnosticsRequest,
     SavedChart,
+    Workspace,
 )
 from .storage import infer_profiles, new_id, now, store
 
+
+DEFAULT_TENANT_ID = "tenant_demo"
 
 app = FastAPI(title="Industrial Statistical Analytics API", version="0.1.0")
 
@@ -47,23 +50,69 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def current_tenant_id(x_tenant_id: str | None = Header(default=None, alias="X-Tenant-ID")) -> str:
+    return x_tenant_id or DEFAULT_TENANT_ID
+
+
+def get_workspace_for_tenant(workspace_id: str, tenant_id: str) -> Workspace:
+    workspace = store.workspaces.get(workspace_id)
+    if not workspace or workspace.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return workspace
+
+
+def get_project_for_tenant(project_id: str, tenant_id: str) -> Project:
+    project = store.projects.get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    get_workspace_for_tenant(project.workspace_id, tenant_id)
+    return project
+
+
+def get_dataset_for_tenant(dataset_id: str, tenant_id: str):
+    dataset = store.datasets.get(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    get_project_for_tenant(dataset.project_id, tenant_id)
+    return dataset
+
+
+def project_belongs_to_tenant(project: Project, tenant_id: str) -> bool:
+    workspace = store.workspaces.get(project.workspace_id)
+    return bool(workspace and workspace.tenant_id == tenant_id)
+
+
+def dataset_belongs_to_tenant(dataset_id: str, tenant_id: str) -> bool:
+    dataset = store.datasets.get(dataset_id)
+    if not dataset:
+        return False
+    project = store.projects.get(dataset.project_id)
+    return bool(project and project_belongs_to_tenant(project, tenant_id))
+
+
+def report_belongs_to_tenant(report: Report, tenant_id: str) -> bool:
+    project = store.projects.get(report.project_id)
+    return bool(project and project_belongs_to_tenant(project, tenant_id))
+
+
 @app.get("/workspaces")
-def list_workspaces():
-    return list(store.workspaces.values())
+def list_workspaces(tenant_id: str = Depends(current_tenant_id)):
+    return [workspace for workspace in store.workspaces.values() if workspace.tenant_id == tenant_id]
 
 
 @app.get("/projects")
-def list_projects(workspace_id: str | None = None):
-    projects = list(store.projects.values())
+def list_projects(workspace_id: str | None = None, tenant_id: str = Depends(current_tenant_id)):
+    if workspace_id:
+        get_workspace_for_tenant(workspace_id, tenant_id)
+    projects = [project for project in store.projects.values() if project_belongs_to_tenant(project, tenant_id)]
     if workspace_id:
         projects = [project for project in projects if project.workspace_id == workspace_id]
     return projects
 
 
 @app.post("/projects", response_model=Project)
-def create_project(request: CreateProjectRequest) -> Project:
-    if request.workspace_id not in store.workspaces:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+def create_project(request: CreateProjectRequest, tenant_id: str = Depends(current_tenant_id)) -> Project:
+    get_workspace_for_tenant(request.workspace_id, tenant_id)
     project = Project(
         id=new_id("prj"),
         workspace_id=request.workspace_id,
@@ -77,17 +126,22 @@ def create_project(request: CreateProjectRequest) -> Project:
 
 
 @app.get("/datasets")
-def list_datasets(project_id: str | None = None):
-    datasets = list(store.datasets.values())
+def list_datasets(project_id: str | None = None, tenant_id: str = Depends(current_tenant_id)):
+    if project_id:
+        get_project_for_tenant(project_id, tenant_id)
+    datasets = [dataset for dataset in store.datasets.values() if dataset_belongs_to_tenant(dataset.id, tenant_id)]
     if project_id:
         datasets = [dataset for dataset in datasets if dataset.project_id == project_id]
     return datasets
 
 
 @app.post("/datasets/import", response_model=DatasetPreview)
-async def import_dataset(file: UploadFile = File(...), project_id: str = Form("prj_demo")) -> DatasetPreview:
-    if project_id not in store.projects:
-        raise HTTPException(status_code=404, detail="Project not found")
+async def import_dataset(
+    file: UploadFile = File(...),
+    project_id: str = Form("prj_demo"),
+    tenant_id: str = Depends(current_tenant_id),
+) -> DatasetPreview:
+    get_project_for_tenant(project_id, tenant_id)
 
     content = await file.read()
     try:
@@ -108,17 +162,14 @@ async def import_dataset(file: UploadFile = File(...), project_id: str = Form("p
 
 
 @app.get("/datasets/{dataset_id}/preview", response_model=DatasetPreview)
-def preview_dataset(dataset_id: str, limit: int = 100) -> DatasetPreview:
-    dataset = store.datasets.get(dataset_id)
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+def preview_dataset(dataset_id: str, limit: int = 100, tenant_id: str = Depends(current_tenant_id)) -> DatasetPreview:
+    dataset = get_dataset_for_tenant(dataset_id, tenant_id)
     return DatasetPreview(dataset=dataset, rows=store.rows[dataset_id][:limit])
 
 
 @app.post("/charts", response_model=SavedChart)
-def save_chart(spec: ChartSpec) -> SavedChart:
-    if spec.dataset_id not in store.datasets:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+def save_chart(spec: ChartSpec, tenant_id: str = Depends(current_tenant_id)) -> SavedChart:
+    get_dataset_for_tenant(spec.dataset_id, tenant_id)
     saved = SavedChart(**spec.model_dump(exclude={"id"}), id=new_id("cht"), created_at=now())
     store.charts[saved.id] = saved
     store.save()
@@ -126,42 +177,48 @@ def save_chart(spec: ChartSpec) -> SavedChart:
 
 
 @app.get("/charts")
-def list_charts(dataset_id: str | None = None):
-    charts = list(store.charts.values())
+def list_charts(dataset_id: str | None = None, tenant_id: str = Depends(current_tenant_id)):
+    if dataset_id:
+        get_dataset_for_tenant(dataset_id, tenant_id)
+    charts = [chart for chart in store.charts.values() if dataset_belongs_to_tenant(chart.dataset_id, tenant_id)]
     if dataset_id:
         charts = [chart for chart in charts if chart.dataset_id == dataset_id]
     return charts
 
 
 @app.get("/analysis/runs")
-def list_analysis_runs(dataset_id: str | None = None):
-    runs = list(store.analysis_runs.values())
+def list_analysis_runs(dataset_id: str | None = None, tenant_id: str = Depends(current_tenant_id)):
+    if dataset_id:
+        get_dataset_for_tenant(dataset_id, tenant_id)
+    runs = [run for run in store.analysis_runs.values() if dataset_belongs_to_tenant(run.dataset_id, tenant_id)]
     if dataset_id:
         runs = [run for run in runs if run.dataset_id == dataset_id]
     return runs
 
 
 @app.get("/models/runs")
-def list_model_runs(dataset_id: str | None = None):
-    runs = list(store.model_runs.values())
+def list_model_runs(dataset_id: str | None = None, tenant_id: str = Depends(current_tenant_id)):
+    if dataset_id:
+        get_dataset_for_tenant(dataset_id, tenant_id)
+    runs = [run for run in store.model_runs.values() if dataset_belongs_to_tenant(run.dataset_id, tenant_id)]
     if dataset_id:
         runs = [run for run in runs if run.dataset_id == dataset_id]
     return runs
 
 
 @app.get("/reports")
-def list_reports(project_id: str | None = None):
-    reports = list(store.reports.values())
+def list_reports(project_id: str | None = None, tenant_id: str = Depends(current_tenant_id)):
+    if project_id:
+        get_project_for_tenant(project_id, tenant_id)
+    reports = [report for report in store.reports.values() if report_belongs_to_tenant(report, tenant_id)]
     if project_id:
         reports = [report for report in reports if report.project_id == project_id]
     return reports
 
 
 @app.post("/analysis/run", response_model=AnalysisRun)
-def run_analysis(request: AnalysisRequest) -> AnalysisRun:
-    dataset = store.datasets.get(request.dataset_id)
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+def run_analysis(request: AnalysisRequest, tenant_id: str = Depends(current_tenant_id)) -> AnalysisRun:
+    dataset = get_dataset_for_tenant(request.dataset_id, tenant_id)
 
     rows = store.rows[request.dataset_id]
     outputs: dict[str, object]
@@ -331,10 +388,8 @@ def run_analysis(request: AnalysisRequest) -> AnalysisRun:
 
 
 @app.post("/models/run", response_model=ModelRun)
-def run_model(request: ModelRequest) -> ModelRun:
-    dataset = store.datasets.get(request.dataset_id)
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+def run_model(request: ModelRequest, tenant_id: str = Depends(current_tenant_id)) -> ModelRun:
+    dataset = get_dataset_for_tenant(request.dataset_id, tenant_id)
     if request.model_type != "linear_regression":
         raise HTTPException(status_code=400, detail="Only linear_regression is implemented in the MVP")
 
@@ -358,10 +413,8 @@ def run_model(request: ModelRequest) -> ModelRun:
 
 
 @app.post("/fit-model/run", response_model=FitModelRun)
-def run_fit_model(request: FitModelRequest) -> FitModelRun:
-    dataset = store.datasets.get(request.dataset_id)
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+def run_fit_model(request: FitModelRequest, tenant_id: str = Depends(current_tenant_id)) -> FitModelRun:
+    dataset = get_dataset_for_tenant(request.dataset_id, tenant_id)
     if request.model_type != "standard_least_squares":
         raise HTTPException(status_code=400, detail="Only standard_least_squares is implemented for Fit Model.")
 
@@ -405,14 +458,12 @@ def run_fit_model(request: FitModelRequest) -> FitModelRun:
 
 
 @app.post("/fit-model/save-diagnostics", response_model=DatasetPreview)
-def save_fit_model_diagnostics(request: SaveFitDiagnosticsRequest) -> DatasetPreview:
+def save_fit_model_diagnostics(request: SaveFitDiagnosticsRequest, tenant_id: str = Depends(current_tenant_id)) -> DatasetPreview:
     run = store.model_runs.get(request.run_id)
     if not run or not isinstance(run, FitModelRun):
         raise HTTPException(status_code=404, detail="Fit Model run not found")
 
-    dataset = store.datasets.get(run.dataset_id)
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+    dataset = get_dataset_for_tenant(run.dataset_id, tenant_id)
     rows = store.rows[dataset.id]
     for response in run.responses:
         columns = {
@@ -452,9 +503,8 @@ def save_fit_model_diagnostics(request: SaveFitDiagnosticsRequest) -> DatasetPre
 
 
 @app.post("/reports", response_model=Report)
-def create_report(project_id: str, name: str) -> Report:
-    if project_id not in store.projects:
-        raise HTTPException(status_code=404, detail="Project not found")
+def create_report(project_id: str, name: str, tenant_id: str = Depends(current_tenant_id)) -> Report:
+    get_project_for_tenant(project_id, tenant_id)
     report = Report(
         id=new_id("rpt"),
         project_id=project_id,
