@@ -1272,6 +1272,65 @@ def full_factorial_design(factors: list[dict[str, Any]], replicates: int = 1, ra
     return rows
 
 
+def event_observed(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if is_numeric(value):
+        return float(value) != 0.0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "event", "fail", "failed", "failure", "dead", "deceased"}
+    return False
+
+
+def kaplan_meier_survival(rows: list[dict[str, Any]], time_column: str, event_column: str, by_column: str | None = None) -> dict[str, Any]:
+    observations_by_group: dict[str, list[tuple[float, bool]]] = {}
+    missing = 0
+    for row in rows:
+        time_value = row.get(time_column)
+        if not is_numeric(time_value) or float(time_value) < 0:
+            missing += 1
+            continue
+        group = str(row.get(by_column) or "All") if by_column else "All"
+        observations_by_group.setdefault(group, []).append((float(time_value), event_observed(row.get(event_column))))
+
+    if not observations_by_group:
+        raise ValueError("Reliability analysis requires at least one nonnegative numeric time value.")
+
+    groups: list[dict[str, Any]] = []
+    for group, observations in sorted(observations_by_group.items()):
+        ordered = sorted(observations, key=lambda item: item[0])
+        at_risk = len(ordered)
+        survival = 1.0
+        median_survival = None
+        curve = [{"time": 0.0, "survival": 1.0, "at_risk": float(at_risk), "events": 0.0, "censored": 0.0}]
+        for time in sorted({time for time, _observed in ordered}):
+            at_time = [observed for observed_time, observed in ordered if observed_time == time]
+            events = sum(1 for observed in at_time if observed)
+            censored = len(at_time) - events
+            # Kaplan-Meier product-limit estimator: S(t) = product(1 - d_i / n_i).
+            if at_risk > 0 and events > 0:
+                survival *= 1 - events / at_risk
+            if median_survival is None and survival <= 0.5:
+                median_survival = time
+            curve.append({"time": time, "survival": survival, "at_risk": float(at_risk), "events": float(events), "censored": float(censored)})
+            at_risk -= len(at_time)
+
+        event_count = sum(1 for _time, observed in ordered if observed)
+        censored_count = len(ordered) - event_count
+        groups.append(
+            {
+                "group": group,
+                "n": float(len(ordered)),
+                "events": float(event_count),
+                "censored": float(censored_count),
+                "median_survival": median_survival,
+                "curve": curve,
+            }
+        )
+
+    return {"time": time_column, "event": event_column, "by": by_column, "missing": float(missing), "groups": groups}
+
+
 def regression_fit(pairs: list[tuple[float, float]]) -> tuple[float, float]:
     xs = [pair[0] for pair in pairs]
     ys = [pair[1] for pair in pairs]

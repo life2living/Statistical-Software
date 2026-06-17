@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
+from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, kaplan_meier_survival, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
 
 
 ROWS = [
@@ -253,6 +253,24 @@ def test_full_factorial_design_randomization_is_seeded() -> None:
 
     assert first == second
     assert [row["standard_order"] for row in first] != [1, 2, 3, 4]
+
+
+def test_kaplan_meier_survival_handles_events_and_censoring() -> None:
+    rows = [
+        {"hours": 5.0, "failed": 1, "line": "A"},
+        {"hours": 8.0, "failed": 0, "line": "A"},
+        {"hours": 10.0, "failed": 1, "line": "A"},
+        {"hours": 7.0, "failed": 1, "line": "B"},
+        {"hours": 9.0, "failed": 0, "line": "B"},
+    ]
+    result = kaplan_meier_survival(rows, "hours", "failed", by_column="line")
+
+    group_a = next(group for group in result["groups"] if group["group"] == "A")
+    assert group_a["n"] == 3.0
+    assert group_a["events"] == 2.0
+    assert group_a["censored"] == 1.0
+    assert round(group_a["curve"][1]["survival"], 6) == 0.666667
+    assert group_a["median_survival"] == 10.0
 
 
 def test_linear_regression_validation_split_reports_holdout_metrics() -> None:

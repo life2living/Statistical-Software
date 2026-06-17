@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { generateFullFactorialDoe, importDataset, listDatasets, listLinearModelRuns, optimizeFitModelProfiler, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, TabulateRun, VariabilityRun } from "./types";
+import { generateFullFactorialDoe, importDataset, listDatasets, listLinearModelRuns, optimizeFitModelProfiler, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runReliabilitySurvival, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ReliabilityRun, TabulateRun, VariabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -2285,6 +2285,102 @@ function ModelComparisonTable({ runs, activeRunId }: { runs: ModelRun[]; activeR
   );
 }
 
+function ReliabilityReport({
+  run,
+  menuOpen,
+  showRiskTable,
+  onToggleMenu,
+  onToggleRiskTable
+}: {
+  run: ReliabilityRun | null;
+  menuOpen: boolean;
+  showRiskTable: boolean;
+  onToggleMenu: () => void;
+  onToggleRiskTable: () => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hostRef.current || !run) return;
+    const chart = echarts.init(hostRef.current);
+    const result = run.outputs.reliability_survival;
+    chart.setOption({
+      animation: false,
+      tooltip: { trigger: "axis" },
+      legend: { top: 0 },
+      grid: { top: 36, left: 52, right: 18, bottom: 42 },
+      xAxis: { type: "value", name: result.time },
+      yAxis: { type: "value", min: 0, max: 1, name: "Survival" },
+      series: result.groups.map((group) => ({
+        type: "line",
+        name: group.group,
+        step: "end",
+        symbolSize: 5,
+        data: group.curve.map((point) => [point.time, point.survival])
+      })) as SeriesOption[]
+    } satisfies EChartsOption);
+    const resize = () => chart.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chart.dispose();
+    };
+  }, [run]);
+
+  if (!run) {
+    return (
+      <section className="reliability-report-window">
+        <p>Assign Time and Event columns, then click Run.</p>
+      </section>
+    );
+  }
+
+  const result = run.outputs.reliability_survival;
+  return (
+    <section className="reliability-report-window">
+      <div className="distribution-card-header">
+        <div className="red-menu">
+          <button className={menuOpen ? "red-triangle active" : "red-triangle"} onClick={onToggleMenu} title="Reliability options">
+            ▶
+          </button>
+          {menuOpen ? (
+            <div className="red-menu-popover">
+              <button onClick={onToggleRiskTable}>{showRiskTable ? "Hide Risk Table" : "Risk Table"}</button>
+            </div>
+          ) : null}
+        </div>
+        <h3>Survival of {result.time}</h3>
+        <span>{result.groups.length} group(s), {result.missing.toFixed(0)} missing</span>
+      </div>
+      <div ref={hostRef} className="reliability-chart" />
+      <div className="fit-y-stats">
+        {result.groups.map((group) => (
+          <span key={group.group}>{group.group}: events {group.events.toFixed(0)}, censored {group.censored.toFixed(0)}, median {group.median_survival?.toFixed(3) ?? "-"}</span>
+        ))}
+      </div>
+      {showRiskTable ? (
+        <div className="residual-table">
+          <table>
+            <thead><tr><th>Group</th><th>Time</th><th>At Risk</th><th>Events</th><th>Censored</th><th>Survival</th></tr></thead>
+            <tbody>
+              {result.groups.flatMap((group) => group.curve.map((point) => ({ group: group.group, point }))).map((row, index) => (
+                <tr key={index}>
+                  <td>{row.group}</td>
+                  <td>{row.point.time.toFixed(3)}</td>
+                  <td>{row.point.at_risk.toFixed(0)}</td>
+                  <td>{row.point.events.toFixed(0)}</td>
+                  <td>{row.point.censored.toFixed(0)}</td>
+                  <td>{row.point.survival.toFixed(6)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export default function App() {
   const chartRef = useRef<HTMLDivElement>(null);
   const profilerRef = useRef<HTMLDivElement>(null);
@@ -2320,7 +2416,7 @@ export default function App() {
   const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR" | "variability" | "doe">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR" | "variability" | "doe" | "reliability">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -2357,6 +2453,12 @@ export default function App() {
   const [variabilityRun, setVariabilityRun] = useState<VariabilityRun | null>(null);
   const [variabilityMenuOpen, setVariabilityMenuOpen] = useState(false);
   const [showVariabilityMeans, setShowVariabilityMeans] = useState(true);
+  const [reliabilityTime, setReliabilityTime] = useState<string | null>(null);
+  const [reliabilityEvent, setReliabilityEvent] = useState<string | null>(null);
+  const [reliabilityBy, setReliabilityBy] = useState<string | null>(null);
+  const [reliabilityRun, setReliabilityRun] = useState<ReliabilityRun | null>(null);
+  const [reliabilityMenuOpen, setReliabilityMenuOpen] = useState(false);
+  const [showReliabilityRiskTable, setShowReliabilityRiskTable] = useState(true);
   const [showTabulateCount, setShowTabulateCount] = useState(true);
   const [showTabulateMean, setShowTabulateMean] = useState(true);
   const [showTabulateStd, setShowTabulateStd] = useState(true);
@@ -2459,6 +2561,11 @@ export default function App() {
     setVariabilityBy(null);
     setVariabilityRun(null);
     setVariabilityMenuOpen(false);
+    setReliabilityTime(null);
+    setReliabilityEvent(null);
+    setReliabilityBy(null);
+    setReliabilityRun(null);
+    setReliabilityMenuOpen(false);
     setFitYResponse(null);
     setFitXFactor(null);
     setFitYByXRun(null);
@@ -2858,6 +2965,28 @@ export default function App() {
     setAnalyzeMenuOpen(false);
   }
 
+  async function handleReliability() {
+    if (!preview || !reliabilityTime || !reliabilityEvent) {
+      setStatus("Reliability requires Time and Event roles.");
+      return;
+    }
+    const result = await runReliabilitySurvival(preview.dataset.id, reliabilityTime, { event: reliabilityEvent, by: reliabilityBy });
+    setReliabilityRun(result);
+    setReliabilityMenuOpen(true);
+    setStatus(`Reliability ${result.id}: survival of ${reliabilityTime} by ${reliabilityEvent}.`);
+  }
+
+  function openReliabilityPlatform() {
+    if (!reliabilityTime) {
+      setReliabilityTime(numericColumns.find((field) => field.toLowerCase().includes("time") || field.toLowerCase().includes("hour")) ?? numericColumns[0] ?? null);
+    }
+    if (!reliabilityEvent) {
+      setReliabilityEvent(groupingColumns.find((field) => field.toLowerCase().includes("event") || field.toLowerCase().includes("fail")) ?? numericColumns.find((field) => field !== reliabilityTime) ?? null);
+    }
+    setActiveAnalyzePlatform("reliability");
+    setAnalyzeMenuOpen(false);
+  }
+
   async function handleMultivariate() {
     if (!preview) return;
     const columnsForRun = multivariateY.length > 1 ? multivariateY : numericColumns.slice(0, 4);
@@ -3033,7 +3162,7 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "gaugeRR" || activeAnalyzePlatform === "variability" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" || activeAnalyzePlatform === "doe" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "gaugeRR" || activeAnalyzePlatform === "variability" || activeAnalyzePlatform === "reliability" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" || activeAnalyzePlatform === "doe" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
@@ -3054,6 +3183,7 @@ export default function App() {
                 <button onClick={openCapabilityPlatform}>Process Capability</button>
                 <button onClick={openGaugeRRPlatform}>Gauge R&amp;R</button>
                 <button onClick={openVariabilityPlatform}>Variability Chart</button>
+                <button onClick={openReliabilityPlatform}>Reliability / Survival</button>
                 <button onClick={openDoePlatform}>DOE</button>
               </div>
             ) : null}
@@ -3069,7 +3199,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "variability" ? "Variability Chart" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : activeAnalyzePlatform === "doe" ? "DOE" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "variability" ? "Variability Chart" : activeAnalyzePlatform === "reliability" ? "Reliability / Survival" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : activeAnalyzePlatform === "doe" ? "DOE" : "Graph Builder"}</strong>
         {preview ? <em>{preview.dataset.name}</em> : null}
         <span>{status}</span>
       </section>
@@ -3622,6 +3752,74 @@ export default function App() {
             showMeans={showVariabilityMeans}
             onToggleMenu={() => setVariabilityMenuOpen((open) => !open)}
             onToggleMeans={() => setShowVariabilityMeans((show) => !show)}
+          />
+        </section>
+      ) : activeAnalyzePlatform === "reliability" ? (
+        <section className="fit-y-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Assign Roles</h3>
+              <DistributionRoleDrop
+                label="Time"
+                values={reliabilityTime ? [reliabilityTime] : []}
+                multiple={false}
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setReliabilityTime(field)}
+                onRemove={() => setReliabilityTime(null)}
+              />
+              <DistributionRoleDrop
+                label="Event"
+                values={reliabilityEvent ? [reliabilityEvent] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setReliabilityEvent(field)}
+                onRemove={() => setReliabilityEvent(null)}
+              />
+              <DistributionRoleDrop
+                label="By"
+                values={reliabilityBy ? [reliabilityBy] : []}
+                multiple={false}
+                numericOnly={false}
+                numericColumns={numericColumns}
+                onAdd={(field) => setReliabilityBy(field)}
+                onRemove={() => setReliabilityBy(null)}
+              />
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleReliability}>Run</button>
+            <button onClick={() => {
+              setReliabilityTime(null);
+              setReliabilityEvent(null);
+              setReliabilityBy(null);
+              setReliabilityRun(null);
+              setReliabilityMenuOpen(false);
+            }}>
+              Remove
+            </button>
+            <label className="quadratic-toggle"><input type="checkbox" /> Keep dialog open</label>
+          </aside>
+
+          <ReliabilityReport
+            run={reliabilityRun}
+            menuOpen={reliabilityMenuOpen}
+            showRiskTable={showReliabilityRiskTable}
+            onToggleMenu={() => setReliabilityMenuOpen((open) => !open)}
+            onToggleRiskTable={() => setShowReliabilityRiskTable((show) => !show)}
           />
         </section>
       ) : activeAnalyzePlatform === "multivariate" ? (

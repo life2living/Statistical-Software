@@ -1078,6 +1078,18 @@ input {
   width: 100%;
 }
 
+.reliability-report-window {
+  background: #f8fafc;
+  border: 1px solid #aeb7c4;
+  grid-column: 1 / -1;
+  padding: 8px;
+}
+
+.reliability-chart {
+  height: 320px;
+  width: 100%;
+}
+
 .fit-model-diagnostics {
   border: 1px solid #cbd5e1;
   margin-top: 12px;

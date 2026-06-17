@@ -160,6 +160,26 @@ export interface VariabilityRun extends AnalysisRun {
   };
 }
 
+export interface ReliabilityRun extends AnalysisRun {
+  method: "reliability_survival";
+  outputs: {
+    reliability_survival: {
+      time: string;
+      event: string;
+      by: string | null;
+      missing: number;
+      groups: {
+        group: string;
+        n: number;
+        events: number;
+        censored: number;
+        median_survival: number | null;
+        curve: { time: number; survival: number; at_risk: number; events: number; censored: number }[];
+      }[];
+    };
+  };
+}
+
 export interface FitYByXRun extends AnalysisRun {
   method: "fit_y_by_x";
   outputs: {

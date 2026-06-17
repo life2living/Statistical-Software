@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
+from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, kaplan_meier_survival, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
@@ -343,6 +343,18 @@ def run_analysis(request: AnalysisRequest, tenant_id: str = Depends(current_tena
             raise HTTPException(status_code=400, detail=str(error)) from error
         outputs = {"variability_chart": result}
         interpretation = [f"Computed variability for {result['y']} across {len(result['groups'])} groups."]
+    elif request.method == "reliability_survival":
+        if not request.columns:
+            raise HTTPException(status_code=400, detail="Reliability requires a numeric time column")
+        event_column = request.parameters.get("event")
+        if not event_column:
+            raise HTTPException(status_code=400, detail="Reliability requires an event/censor column")
+        try:
+            result = kaplan_meier_survival(rows, request.columns[0], str(event_column), request.parameters.get("by"))
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        outputs = {"reliability_survival": result}
+        interpretation = [f"Computed Kaplan-Meier survival curves for {len(result['groups'])} group(s)."]
     elif request.method == "correlation":
         if len(request.columns) < 2:
             raise HTTPException(status_code=400, detail="Correlation requires two columns")

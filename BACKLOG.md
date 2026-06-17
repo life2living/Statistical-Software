@@ -41,7 +41,7 @@
 - [x] Prediction Profiler refinements: desirability and lock factors.
 - [x] Model comparison and validation splits.
 - [x] DOE import/generation workflow.
-- [ ] Reliability/survival first slice.
+- [x] Reliability/survival first slice.
 - [ ] Process screening across many variables.
 
 ## P3 Productization
