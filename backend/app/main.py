@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, kaplan_meier_survival, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
+from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, kaplan_meier_survival, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, process_screening, spc_control_limits, tabulate_summary, variability_chart
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
@@ -355,6 +355,13 @@ def run_analysis(request: AnalysisRequest, tenant_id: str = Depends(current_tena
             raise HTTPException(status_code=400, detail=str(error)) from error
         outputs = {"reliability_survival": result}
         interpretation = [f"Computed Kaplan-Meier survival curves for {len(result['groups'])} group(s)."]
+    elif request.method == "process_screening":
+        columns = request.columns or [column.name for column in dataset.columns if column.type == "numeric"]
+        if not columns:
+            raise HTTPException(status_code=400, detail="Process Screening requires at least one numeric column")
+        result = process_screening(rows, columns)
+        outputs = {"process_screening": result}
+        interpretation = [f"Screened {int(result['screened_count'])} process columns for missingness and 3-sigma stability signals."]
     elif request.method == "correlation":
         if len(request.columns) < 2:
             raise HTTPException(status_code=400, detail="Correlation requires two columns")

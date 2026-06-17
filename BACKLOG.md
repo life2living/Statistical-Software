@@ -42,7 +42,7 @@
 - [x] Model comparison and validation splits.
 - [x] DOE import/generation workflow.
 - [x] Reliability/survival first slice.
-- [ ] Process screening across many variables.
+- [x] Process screening across many variables.
 
 ## P3 Productization
 

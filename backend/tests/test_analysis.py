@@ -1,6 +1,6 @@
 import pytest
 
-from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, kaplan_meier_survival, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, spc_control_limits, tabulate_summary, variability_chart
+from app.analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, kaplan_meier_survival, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, process_screening, spc_control_limits, tabulate_summary, variability_chart
 
 
 ROWS = [
@@ -27,6 +27,17 @@ def test_spc_returns_limits() -> None:
     result = spc_control_limits(ROWS, "x")
     assert result["ucl"] > result["center"]
     assert result["lcl"] < result["center"]
+
+
+def test_process_screening_ranks_columns_with_violations() -> None:
+    rows = [{"stable": 10.0, "spiky": 10.0} for _ in range(20)]
+    rows.append({"stable": 10.0, "spiky": 200.0})
+
+    result = process_screening(rows, ["stable", "spiky"])
+
+    assert result["screened_count"] == 2.0
+    assert result["columns"][0]["column"] == "spiky"
+    assert result["columns"][0]["violations"] >= 1.0
 
 
 def test_control_chart_imr_returns_individual_and_moving_range_limits() -> None:

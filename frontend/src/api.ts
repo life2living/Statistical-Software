@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ProfilerOptimizeResult, ReliabilityRun, TabulateRun, VariabilityRun } from "./types";
+import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ProcessScreeningRun, ProfilerOptimizeResult, ReliabilityRun, TabulateRun, VariabilityRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -136,6 +136,17 @@ export function runReliabilitySurvival(datasetId: string, time: string, roles: {
       method: "reliability_survival",
       columns: [time],
       parameters: roles
+    })
+  });
+}
+
+export function runProcessScreening(datasetId: string, columns: string[]): Promise<ProcessScreeningRun> {
+  return request<ProcessScreeningRun>("/analysis/run", {
+    method: "POST",
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      method: "process_screening",
+      columns
     })
   });
 }

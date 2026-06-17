@@ -81,6 +81,55 @@ def spc_control_limits(rows: list[dict[str, Any]], column: str) -> dict[str, Any
     return {"center": center, "ucl": ucl, "lcl": lcl, "violations": violations}
 
 
+def process_screening(rows: list[dict[str, Any]], columns: list[str]) -> dict[str, Any]:
+    screened = []
+    for column in columns:
+        values = numeric_values(rows, column)
+        missing = len(rows) - len(values)
+        if not values:
+            screened.append(
+                {
+                    "column": column,
+                    "n": 0.0,
+                    "missing": float(missing),
+                    "mean": None,
+                    "std": None,
+                    "ucl": None,
+                    "lcl": None,
+                    "moving_range_mean": None,
+                    "violations": 0.0,
+                    "stability_score": 0.0,
+                }
+            )
+            continue
+        center = mean(values)
+        sigma = stdev(values) if len(values) > 1 else 0.0
+        ucl = center + 3 * sigma
+        lcl = center - 3 * sigma
+        violations = sum(1 for value in values if value > ucl or value < lcl)
+        moving_ranges = [abs(values[index] - values[index - 1]) for index in range(1, len(values))]
+        missing_rate = missing / len(rows) if rows else 0.0
+        # First screening score combines public 3-sigma violation rate with missingness.
+        stability_score = max(0.0, 1 - (violations / len(values)) - missing_rate)
+        screened.append(
+            {
+                "column": column,
+                "n": float(len(values)),
+                "missing": float(missing),
+                "mean": center,
+                "std": sigma,
+                "ucl": ucl,
+                "lcl": lcl,
+                "moving_range_mean": mean(moving_ranges) if moving_ranges else 0.0,
+                "violations": float(violations),
+                "stability_score": stability_score,
+            }
+        )
+
+    screened.sort(key=lambda item: (-float(item["violations"]), -float(item["missing"]), item["column"]))
+    return {"columns": screened, "screened_count": float(len(screened))}
+
+
 def group_by_phase(points: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     phases: dict[str, list[dict[str, Any]]] = {}
     for point in points:

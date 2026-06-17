@@ -1090,6 +1090,17 @@ input {
   width: 100%;
 }
 
+.process-screening-report {
+  background: #f8fafc;
+  border: 1px solid #aeb7c4;
+  grid-column: 1 / -1;
+  padding: 8px;
+}
+
+.process-screening-report .screening-alert {
+  background: #fff7ed;
+}
+
 .fit-model-diagnostics {
   border: 1px solid #cbd5e1;
   margin-top: 12px;

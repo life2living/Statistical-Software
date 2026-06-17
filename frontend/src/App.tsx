@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { generateFullFactorialDoe, importDataset, listDatasets, listLinearModelRuns, optimizeFitModelProfiler, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runReliabilitySurvival, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ReliabilityRun, TabulateRun, VariabilityRun } from "./types";
+import { generateFullFactorialDoe, importDataset, listDatasets, listLinearModelRuns, optimizeFitModelProfiler, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runProcessScreening, runReliabilitySurvival, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
+import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ProcessScreeningRun, ReliabilityRun, TabulateRun, VariabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -2381,6 +2381,59 @@ function ReliabilityReport({
   );
 }
 
+function ProcessScreeningReport({ run }: { run: ProcessScreeningRun | null }) {
+  if (!run) {
+    return (
+      <section className="process-screening-report">
+        <p>Select numeric process columns, then click Run.</p>
+      </section>
+    );
+  }
+  const rows = run.outputs.process_screening.columns;
+  return (
+    <section className="process-screening-report">
+      <div className="distribution-card-header">
+        <h3>Process Screening</h3>
+        <span>{run.outputs.process_screening.screened_count.toFixed(0)} columns screened</span>
+      </div>
+      <div className="residual-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Column</th>
+              <th>N</th>
+              <th>Missing</th>
+              <th>Mean</th>
+              <th>Std</th>
+              <th>LCL</th>
+              <th>UCL</th>
+              <th>MR Mean</th>
+              <th>Violations</th>
+              <th>Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.column} className={row.violations > 0 ? "screening-alert" : undefined}>
+                <td>{row.column}</td>
+                <td>{row.n.toFixed(0)}</td>
+                <td>{row.missing.toFixed(0)}</td>
+                <td>{row.mean?.toFixed(6) ?? "-"}</td>
+                <td>{row.std?.toFixed(6) ?? "-"}</td>
+                <td>{row.lcl?.toFixed(6) ?? "-"}</td>
+                <td>{row.ucl?.toFixed(6) ?? "-"}</td>
+                <td>{row.moving_range_mean?.toFixed(6) ?? "-"}</td>
+                <td>{row.violations.toFixed(0)}</td>
+                <td>{row.stability_score.toFixed(3)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const chartRef = useRef<HTMLDivElement>(null);
   const profilerRef = useRef<HTMLDivElement>(null);
@@ -2416,7 +2469,7 @@ export default function App() {
   const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR" | "variability" | "doe" | "reliability">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR" | "variability" | "doe" | "reliability" | "processScreening">("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
@@ -2459,6 +2512,8 @@ export default function App() {
   const [reliabilityRun, setReliabilityRun] = useState<ReliabilityRun | null>(null);
   const [reliabilityMenuOpen, setReliabilityMenuOpen] = useState(false);
   const [showReliabilityRiskTable, setShowReliabilityRiskTable] = useState(true);
+  const [processScreeningColumns, setProcessScreeningColumns] = useState<string[]>([]);
+  const [processScreeningRun, setProcessScreeningRun] = useState<ProcessScreeningRun | null>(null);
   const [showTabulateCount, setShowTabulateCount] = useState(true);
   const [showTabulateMean, setShowTabulateMean] = useState(true);
   const [showTabulateStd, setShowTabulateStd] = useState(true);
@@ -2566,6 +2621,8 @@ export default function App() {
     setReliabilityBy(null);
     setReliabilityRun(null);
     setReliabilityMenuOpen(false);
+    setProcessScreeningColumns([]);
+    setProcessScreeningRun(null);
     setFitYResponse(null);
     setFitXFactor(null);
     setFitYByXRun(null);
@@ -2987,6 +3044,26 @@ export default function App() {
     setAnalyzeMenuOpen(false);
   }
 
+  async function handleProcessScreening() {
+    if (!preview) return;
+    const columns = processScreeningColumns.length > 0 ? processScreeningColumns : numericColumns;
+    if (columns.length === 0) {
+      setStatus("Process Screening requires at least one numeric column.");
+      return;
+    }
+    const result = await runProcessScreening(preview.dataset.id, columns);
+    setProcessScreeningRun(result);
+    setStatus(`Process Screening ${result.id}: screened ${result.outputs.process_screening.screened_count.toFixed(0)} columns.`);
+  }
+
+  function openProcessScreeningPlatform() {
+    if (processScreeningColumns.length === 0) {
+      setProcessScreeningColumns(numericColumns.slice(0, 8));
+    }
+    setActiveAnalyzePlatform("processScreening");
+    setAnalyzeMenuOpen(false);
+  }
+
   async function handleMultivariate() {
     if (!preview) return;
     const columnsForRun = multivariateY.length > 1 ? multivariateY : numericColumns.slice(0, 4);
@@ -3162,7 +3239,7 @@ export default function App() {
           <span>Rows</span>
           <span>Cols</span>
           <div className="analyze-menu">
-            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "gaugeRR" || activeAnalyzePlatform === "variability" || activeAnalyzePlatform === "reliability" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" || activeAnalyzePlatform === "doe" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
+            <button className={activeAnalyzePlatform === "fitModel" || activeAnalyzePlatform === "distribution" || activeAnalyzePlatform === "tabulate" || activeAnalyzePlatform === "pareto" || activeAnalyzePlatform === "gaugeRR" || activeAnalyzePlatform === "variability" || activeAnalyzePlatform === "reliability" || activeAnalyzePlatform === "processScreening" || activeAnalyzePlatform === "fitYByX" || activeAnalyzePlatform === "multivariate" || activeAnalyzePlatform === "controlChart" || activeAnalyzePlatform === "doe" ? "menu-button active" : "menu-button"} onClick={() => setAnalyzeMenuOpen((open) => !open)}>
               Analyze
             </button>
             {analyzeMenuOpen ? (
@@ -3184,6 +3261,7 @@ export default function App() {
                 <button onClick={openGaugeRRPlatform}>Gauge R&amp;R</button>
                 <button onClick={openVariabilityPlatform}>Variability Chart</button>
                 <button onClick={openReliabilityPlatform}>Reliability / Survival</button>
+                <button onClick={openProcessScreeningPlatform}>Process Screening</button>
                 <button onClick={openDoePlatform}>DOE</button>
               </div>
             ) : null}
@@ -3199,7 +3277,7 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "variability" ? "Variability Chart" : activeAnalyzePlatform === "reliability" ? "Reliability / Survival" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : activeAnalyzePlatform === "doe" ? "DOE" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "variability" ? "Variability Chart" : activeAnalyzePlatform === "reliability" ? "Reliability / Survival" : activeAnalyzePlatform === "processScreening" ? "Process Screening" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : activeAnalyzePlatform === "doe" ? "DOE" : "Graph Builder"}</strong>
         {preview ? <em>{preview.dataset.name}</em> : null}
         <span>{status}</span>
       </section>
@@ -3821,6 +3899,47 @@ export default function App() {
             onToggleMenu={() => setReliabilityMenuOpen((open) => !open)}
             onToggleRiskTable={() => setShowReliabilityRiskTable((show) => !show)}
           />
+        </section>
+      ) : activeAnalyzePlatform === "processScreening" ? (
+        <section className="fit-y-platform">
+          <aside className="model-select-columns">
+            <div className="column-header">{columns.length} Columns</div>
+            <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
+            <div className="field-list model-field-list">
+              {visibleColumns.map((column) => (
+                <FieldItem key={column.name} column={column} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="distribution-dialog">
+            <div className="role-box">
+              <h3>Assign Roles</h3>
+              <DistributionRoleDrop
+                label="Y Columns"
+                values={processScreeningColumns}
+                multiple
+                numericOnly
+                numericColumns={numericColumns}
+                onAdd={(field) => setProcessScreeningColumns((current) => current.includes(field) ? current : [...current, field])}
+                onRemove={(field) => setProcessScreeningColumns((current) => current.filter((item) => item !== field))}
+              />
+            </div>
+          </section>
+
+          <aside className="model-actions">
+            <button>Help</button>
+            <button onClick={handleProcessScreening}>Run</button>
+            <button onClick={() => {
+              setProcessScreeningColumns([]);
+              setProcessScreeningRun(null);
+            }}>
+              Remove
+            </button>
+            <button onClick={() => setProcessScreeningColumns(numericColumns)}>All Numeric</button>
+          </aside>
+
+          <ProcessScreeningReport run={processScreeningRun} />
         </section>
       ) : activeAnalyzePlatform === "multivariate" ? (
         <section className="fit-y-platform">

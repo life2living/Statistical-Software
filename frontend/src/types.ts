@@ -180,6 +180,27 @@ export interface ReliabilityRun extends AnalysisRun {
   };
 }
 
+export interface ProcessScreeningRun extends AnalysisRun {
+  method: "process_screening";
+  outputs: {
+    process_screening: {
+      screened_count: number;
+      columns: {
+        column: string;
+        n: number;
+        missing: number;
+        mean: number | null;
+        std: number | null;
+        ucl: number | null;
+        lcl: number | null;
+        moving_range_mean: number | null;
+        violations: number;
+        stability_score: number;
+      }[];
+    };
+  };
+}
+
 export interface FitYByXRun extends AnalysisRun {
   method: "fit_y_by_x";
   outputs: {
