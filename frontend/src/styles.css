@@ -159,6 +159,15 @@ input {
   font-size: 18px;
 }
 
+.builder-title em {
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  font-size: 12px;
+  font-style: normal;
+  padding: 3px 8px;
+}
+
 .builder-title span {
   color: #64748b;
   font-size: 13px;

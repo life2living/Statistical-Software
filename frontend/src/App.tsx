@@ -3070,6 +3070,7 @@ export default function App() {
 
       <section className="builder-title">
         <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "variability" ? "Variability Chart" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : activeAnalyzePlatform === "doe" ? "DOE" : "Graph Builder"}</strong>
+        {preview ? <em>{preview.dataset.name}</em> : null}
         <span>{status}</span>
       </section>
 
@@ -3988,17 +3989,6 @@ export default function App() {
             </button>
           </div>
 
-          <label className="dataset-picker">
-            Dataset
-            <select value={preview?.dataset.id ?? ""} onChange={(event) => loadDataset(event.target.value)}>
-              {datasets.map((dataset) => (
-                <option key={dataset.id} value={dataset.id}>
-                  {dataset.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
           <div className="column-header">{columns.length} Columns</div>
           <input className="column-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Enter column name" />
           <div className="field-list">
@@ -4071,7 +4061,6 @@ export default function App() {
               <ModelComparisonTable runs={modelRuns} activeRunId={model?.id} />
             </section>
           </div>
-          {preview ? <DataPreviewTable preview={preview} selectedRows={selectedRows} onToggleRow={toggleRowSelection} /> : null}
         </section>
       </section>
       )}
