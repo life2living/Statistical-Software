@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import html
+import json
+
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from .analysis import control_chart_attribute, control_chart_imr, control_chart_xbar_r, correlation, describe, distribution, fit_standard_least_squares, fit_y_by_x, full_factorial_design, gauge_rr_crossed, kaplan_meier_survival, linear_regression, multivariate, oneway_anova, optimize_profiler_values, pareto_summary, process_capability, process_screening, spc_control_limits, tabulate_summary, variability_chart
 from .importers import parse_tabular_file
 from .models import (
     AnalysisRequest,
     AnalysisRun,
+    AddReportBlockRequest,
     ChartSpec,
+    AnalysisTemplate,
+    CreateAnalysisTemplateRequest,
     CreateProjectRequest,
+    CreateReportRequest,
     DatasetPreview,
     DoeGenerateRequest,
     FitModelRequest,
@@ -96,6 +104,35 @@ def dataset_belongs_to_tenant(dataset_id: str, tenant_id: str) -> bool:
 def report_belongs_to_tenant(report: Report, tenant_id: str) -> bool:
     project = store.projects.get(report.project_id)
     return bool(project and project_belongs_to_tenant(project, tenant_id))
+
+
+def template_belongs_to_tenant(template_id: str, tenant_id: str) -> bool:
+    template = store.analysis_templates.get(template_id)
+    if not template:
+        return False
+    project = store.projects.get(template.project_id)
+    return bool(project and project_belongs_to_tenant(project, tenant_id))
+
+
+def get_report_for_tenant(report_id: str, tenant_id: str) -> Report:
+    report = store.reports.get(report_id)
+    if not report or not report_belongs_to_tenant(report, tenant_id):
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
+
+
+def get_analysis_run_for_tenant(run_id: str, tenant_id: str) -> AnalysisRun:
+    run = store.analysis_runs.get(run_id)
+    if not run or not dataset_belongs_to_tenant(run.dataset_id, tenant_id):
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    return run
+
+
+def get_model_run_for_tenant(run_id: str, tenant_id: str):
+    run = store.model_runs.get(run_id)
+    if not run or not dataset_belongs_to_tenant(run.dataset_id, tenant_id):
+        raise HTTPException(status_code=404, detail="Model run not found")
+    return run
 
 
 @app.get("/workspaces")
@@ -241,6 +278,62 @@ def list_reports(project_id: str | None = None, tenant_id: str = Depends(current
     if project_id:
         reports = [report for report in reports if report.project_id == project_id]
     return reports
+
+
+@app.get("/analysis/templates")
+def list_analysis_templates(project_id: str | None = None, tenant_id: str = Depends(current_tenant_id)):
+    if project_id:
+        get_project_for_tenant(project_id, tenant_id)
+    templates = [template for template in store.analysis_templates.values() if template_belongs_to_tenant(template.id, tenant_id)]
+    if project_id:
+        templates = [template for template in templates if template.project_id == project_id]
+    return templates
+
+
+@app.post("/analysis/templates")
+def create_analysis_template(request: CreateAnalysisTemplateRequest, tenant_id: str = Depends(current_tenant_id)) -> AnalysisTemplate:
+    get_project_for_tenant(request.project_id, tenant_id)
+    dataset = get_dataset_for_tenant(request.dataset_id, tenant_id)
+    if dataset.project_id != request.project_id:
+        raise HTTPException(status_code=400, detail="Template dataset must belong to the selected project")
+    template = AnalysisTemplate(
+        id=new_id("tpl"),
+        project_id=request.project_id,
+        dataset_id=request.dataset_id,
+        name=request.name,
+        description=request.description,
+        method=request.method,
+        columns=request.columns,
+        parameters=request.parameters,
+        steps=[
+            {
+                "type": "analysis",
+                "method": request.method,
+                "columns": request.columns,
+                "parameters": request.parameters,
+            }
+        ],
+        created_at=now(),
+    )
+    store.analysis_templates[template.id] = template
+    store.save()
+    return template
+
+
+@app.post("/analysis/templates/{template_id}/run", response_model=AnalysisRun)
+def run_analysis_template(template_id: str, tenant_id: str = Depends(current_tenant_id)) -> AnalysisRun:
+    template = store.analysis_templates.get(template_id)
+    if not template or not template_belongs_to_tenant(template_id, tenant_id):
+        raise HTTPException(status_code=404, detail="Analysis template not found")
+    return run_analysis(
+        AnalysisRequest(
+            dataset_id=template.dataset_id,
+            method=template.method,
+            columns=template.columns,
+            parameters=template.parameters,
+        ),
+        tenant_id=tenant_id,
+    )
 
 
 @app.post("/analysis/run", response_model=AnalysisRun)
@@ -576,17 +669,17 @@ def optimize_fit_model_profiler(request: ProfilerOptimizeRequest, tenant_id: str
 
 
 @app.post("/reports", response_model=Report)
-def create_report(project_id: str, name: str, tenant_id: str = Depends(current_tenant_id)) -> Report:
-    get_project_for_tenant(project_id, tenant_id)
+def create_report(request: CreateReportRequest, tenant_id: str = Depends(current_tenant_id)) -> Report:
+    get_project_for_tenant(request.project_id, tenant_id)
     report = Report(
         id=new_id("rpt"),
-        project_id=project_id,
-        name=name,
+        project_id=request.project_id,
+        name=request.name,
         blocks=[
             ReportBlock(
                 type="markdown",
                 title="Summary",
-                body="Interactive report shell for saved charts, analyses, and model runs.",
+                body="Report draft for saved StatFlow analyses, charts, and model runs.",
             )
         ],
         created_at=now(),
@@ -594,3 +687,76 @@ def create_report(project_id: str, name: str, tenant_id: str = Depends(current_t
     store.reports[report.id] = report
     store.save()
     return report
+
+
+@app.post("/reports/{report_id}/blocks", response_model=Report)
+def add_report_block(report_id: str, request: AddReportBlockRequest, tenant_id: str = Depends(current_tenant_id)) -> Report:
+    report = get_report_for_tenant(report_id, tenant_id)
+    if request.type == "analysis":
+        if not request.ref_id:
+            raise HTTPException(status_code=400, detail="Analysis report blocks require ref_id")
+        get_analysis_run_for_tenant(request.ref_id, tenant_id)
+    elif request.type == "model":
+        if not request.ref_id:
+            raise HTTPException(status_code=400, detail="Model report blocks require ref_id")
+        get_model_run_for_tenant(request.ref_id, tenant_id)
+    elif request.type == "chart":
+        if not request.ref_id or request.ref_id not in store.charts:
+            raise HTTPException(status_code=404, detail="Chart not found")
+        chart = store.charts[request.ref_id]
+        get_dataset_for_tenant(chart.dataset_id, tenant_id)
+
+    report.blocks.append(ReportBlock(type=request.type, title=request.title, ref_id=request.ref_id, body=request.body))
+    store.save()
+    return report
+
+
+@app.get("/reports/{report_id}/export/html", response_class=HTMLResponse)
+def export_report_html(report_id: str, tenant_id: str = Depends(current_tenant_id)) -> HTMLResponse:
+    report = get_report_for_tenant(report_id, tenant_id)
+    project = get_project_for_tenant(report.project_id, tenant_id)
+    body = "\n".join(render_report_block_html(block, tenant_id) for block in report.blocks)
+    document = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{html.escape(report.name)}</title>
+  <style>
+    body {{ color: #1f2937; font-family: Arial, Helvetica, sans-serif; margin: 32px; }}
+    h1 {{ font-size: 26px; margin-bottom: 4px; }}
+    h2 {{ border-bottom: 1px solid #d1d5db; font-size: 18px; padding-bottom: 6px; }}
+    .meta {{ color: #6b7280; margin-bottom: 28px; }}
+    section {{ margin-bottom: 28px; }}
+    pre {{ background: #f3f4f6; border: 1px solid #d1d5db; overflow: auto; padding: 12px; }}
+    ul {{ padding-left: 20px; }}
+  </style>
+</head>
+<body>
+  <h1>{html.escape(report.name)}</h1>
+  <div class="meta">Project: {html.escape(project.name)} | Created: {html.escape(report.created_at.isoformat())}</div>
+  {body}
+</body>
+</html>"""
+    return HTMLResponse(content=document)
+
+
+def render_report_block_html(block: ReportBlock, tenant_id: str) -> str:
+    title = html.escape(block.title)
+    if block.type == "markdown":
+        text = html.escape(block.body or "").replace("\n", "<br>")
+        return f"<section><h2>{title}</h2><p>{text}</p></section>"
+    if block.type == "analysis" and block.ref_id:
+        run = get_analysis_run_for_tenant(block.ref_id, tenant_id)
+        payload = html.escape(json.dumps(run.outputs, indent=2, default=str))
+        inputs = html.escape(json.dumps(run.inputs, indent=2, default=str))
+        interpretation = "".join(f"<li>{html.escape(item)}</li>" for item in run.interpretation)
+        return f"<section><h2>{title}</h2><p>Method: {html.escape(run.method)}</p><ul>{interpretation}</ul><h3>Inputs</h3><pre>{inputs}</pre><h3>Outputs</h3><pre>{payload}</pre></section>"
+    if block.type == "model" and block.ref_id:
+        run = get_model_run_for_tenant(block.ref_id, tenant_id)
+        payload = html.escape(json.dumps(run.model_dump(mode="json"), indent=2, default=str))
+        return f"<section><h2>{title}</h2><pre>{payload}</pre></section>"
+    if block.type == "chart" and block.ref_id:
+        chart = store.charts.get(block.ref_id)
+        payload = html.escape(json.dumps(chart.model_dump(mode="json") if chart else {}, indent=2, default=str))
+        return f"<section><h2>{title}</h2><pre>{payload}</pre></section>"
+    return f"<section><h2>{title}</h2></section>"

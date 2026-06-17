@@ -208,6 +208,87 @@ input {
   padding: 10px 18px 18px;
 }
 
+.project-workspace {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(360px, 0.95fr) minmax(480px, 1.25fr);
+  padding: 12px 18px 18px;
+}
+
+.project-panel {
+  background: #f8fafc;
+  border: 1px solid #aeb7c4;
+  min-height: 520px;
+  padding: 10px;
+}
+
+.template-save-box,
+.report-block-box {
+  background: #eef2f7;
+  border: 1px solid #c4ccd8;
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 10px;
+}
+
+.template-save-box p,
+.report-block-box p,
+.artifact-list p {
+  color: #64748b;
+  margin: 0;
+}
+
+.artifact-list {
+  display: grid;
+  gap: 8px;
+}
+
+.artifact-list article {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 8px;
+}
+
+.artifact-list article div,
+.artifact-select {
+  display: grid;
+  gap: 3px;
+}
+
+.artifact-list span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.artifact-select {
+  background: transparent;
+  border: 0;
+  justify-items: start;
+  padding: 0;
+  text-align: left;
+}
+
+.selected-artifact {
+  outline: 2px solid #60a5fa;
+}
+
+.report-create-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 10px 0;
+}
+
+.report-block-box ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
 .model-select-columns,
 .model-dialog,
 .distribution-dialog,

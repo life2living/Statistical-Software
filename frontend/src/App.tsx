@@ -1,8 +1,8 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { generateFullFactorialDoe, importDataset, listDatasets, listLinearModelRuns, optimizeFitModelProfiler, previewDataset, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runProcessScreening, runReliabilitySurvival, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
-import type { AnalysisRun, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ProcessScreeningRun, ReliabilityRun, TabulateRun, VariabilityRun } from "./types";
+import { addReportBlock, createAnalysisTemplate, createReport, generateFullFactorialDoe, importDataset, listAnalysisTemplates, listDatasets, listLinearModelRuns, listReports, optimizeFitModelProfiler, previewDataset, reportExportUrl, runAnalysisTemplate, runControlChart, runDescriptive, runDistribution, runFitModel, runFitYByX, runGaugeRR, runLinearModel, runMultivariate, runOneway, runPareto, runProcessCapability, runProcessScreening, runReliabilitySurvival, runSpc, runTabulate, runVariabilityChart, saveChart, saveFitModelDiagnostics } from "./api";
+import type { AnalysisMethod, AnalysisRun, AnalysisTemplate, ChartSpec, ChartType, ColumnProfile, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ProcessScreeningRun, ReliabilityRun, Report, TabulateRun, VariabilityRun } from "./types";
 
 type DropZoneKey = "x" | "y" | "color" | "size" | "wrap" | "overlay" | "groupX" | "groupY";
 type ZoneState = Record<DropZoneKey, string[]>;
@@ -47,6 +47,7 @@ const chartLabels: Record<ChartType, string> = {
 };
 
 type ControlChartType = "imr" | "xbar_r" | "p" | "np" | "c" | "u";
+type AnalyzePlatform = "graph" | "project" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR" | "variability" | "doe" | "reliability" | "processScreening";
 
 function controlChartLabel(chartType: ControlChartType) {
   if (chartType === "imr") return "I-MR";
@@ -2434,6 +2435,102 @@ function ProcessScreeningReport({ run }: { run: ProcessScreeningRun | null }) {
   );
 }
 
+function ProjectWorkspace({
+  datasetName,
+  templates,
+  reports,
+  selectedReportId,
+  reportName,
+  activeTemplateName,
+  activeTemplateDescription,
+  activeResultLabel,
+  onSelectReport,
+  onReportNameChange,
+  onCreateReport,
+  onSaveTemplate,
+  onRunTemplate,
+  onAddResultToReport,
+  onOpenReport
+}: {
+  datasetName: string | null;
+  templates: AnalysisTemplate[];
+  reports: Report[];
+  selectedReportId: string | null;
+  reportName: string;
+  activeTemplateName: string;
+  activeTemplateDescription: string;
+  activeResultLabel: string | null;
+  onSelectReport: (reportId: string) => void;
+  onReportNameChange: (name: string) => void;
+  onCreateReport: () => void;
+  onSaveTemplate: () => void;
+  onRunTemplate: (templateId: string) => void;
+  onAddResultToReport: () => void;
+  onOpenReport: (reportId: string) => void;
+}) {
+  const selectedReport = reports.find((report) => report.id === selectedReportId) ?? reports[0] ?? null;
+  return (
+    <section className="project-workspace">
+      <section className="project-panel">
+        <div className="distribution-card-header">
+          <h3>Analysis Templates</h3>
+          <span>{datasetName ?? "No active table"}</span>
+        </div>
+        <div className="template-save-box">
+          <strong>{activeTemplateName}</strong>
+          <p>{activeTemplateDescription}</p>
+          <button onClick={onSaveTemplate}>Save Current Launch State</button>
+        </div>
+        <div className="artifact-list">
+          {templates.length === 0 ? <p>No saved templates yet.</p> : templates.map((template) => (
+            <article key={template.id}>
+              <div>
+                <strong>{template.name}</strong>
+                <span>{template.method} · {template.columns.join(", ") || "all numeric"}</span>
+              </div>
+              <button onClick={() => onRunTemplate(template.id)}>Run</button>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="project-panel">
+        <div className="distribution-card-header">
+          <h3>Reports</h3>
+          <span>{reports.length} drafts</span>
+        </div>
+        <div className="report-create-row">
+          <input value={reportName} onChange={(event) => onReportNameChange(event.target.value)} />
+          <button onClick={onCreateReport}>New Report</button>
+        </div>
+        <div className="artifact-list">
+          {reports.length === 0 ? <p>No report drafts yet.</p> : reports.map((report) => (
+            <article key={report.id} className={report.id === selectedReport?.id ? "selected-artifact" : undefined}>
+              <button className="artifact-select" onClick={() => onSelectReport(report.id)}>
+                <strong>{report.name}</strong>
+                <span>{report.blocks.length} blocks</span>
+              </button>
+              <button onClick={() => onOpenReport(report.id)}>HTML</button>
+            </article>
+          ))}
+        </div>
+        <div className="report-block-box">
+          <strong>{selectedReport ? selectedReport.name : "Select a report"}</strong>
+          <p>{activeResultLabel ? `Ready to add: ${activeResultLabel}` : "Run an analysis or model, then add it to the selected report."}</p>
+          <button disabled={!selectedReport || !activeResultLabel} onClick={onAddResultToReport}>Add Current Result</button>
+          {selectedReport ? (
+            <ul>
+              {selectedReport.blocks.map((block, index) => (
+                <li key={`${block.title}-${index}`}>{block.type}: {block.title}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </section>
+    </section>
+  );
+}
+
 export default function App() {
   const chartRef = useRef<HTMLDivElement>(null);
   const profilerRef = useRef<HTMLDivElement>(null);
@@ -2469,9 +2566,13 @@ export default function App() {
   const [showFitModelAicc, setShowFitModelAicc] = useState(false);
   const [showFitModelResiduals, setShowFitModelResiduals] = useState(true);
   const [fitModelDiagnosticMode, setFitModelDiagnosticMode] = useState<"residual" | "actual">("residual");
-  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<"graph" | "fitModel" | "distribution" | "fitYByX" | "multivariate" | "controlChart" | "capability" | "tabulate" | "pareto" | "gaugeRR" | "variability" | "doe" | "reliability" | "processScreening">("graph");
+  const [activeAnalyzePlatform, setActiveAnalyzePlatform] = useState<AnalyzePlatform>("graph");
   const [analyzeMenuOpen, setAnalyzeMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [projectTemplates, setProjectTemplates] = useState<AnalysisTemplate[]>([]);
+  const [projectReports, setProjectReports] = useState<Report[]>([]);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [newReportName, setNewReportName] = useState("Quality review");
   const [plotMenuOpen, setPlotMenuOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [showNormalCurve, setShowNormalCurve] = useState(false);
@@ -2647,6 +2748,7 @@ export default function App() {
     listDatasets()
       .then(async (items) => {
         setDatasets(items);
+        await refreshProjectArtifacts();
         if (items[0]) {
           await loadDataset(items[0].id);
           setStatus("Upload CSV/XLSX or drag multiple fields into X and Y zones.");
@@ -2702,6 +2804,8 @@ export default function App() {
   const profileDesirability = fitRun && profileResponse && profilePrediction !== null
     ? desirabilityScore(fitRun, profileResponse, profilePrediction, profilerGoal, profilerTarget)
     : null;
+  const activeTemplate = buildActiveTemplate();
+  const activeReportable = currentReportableResult();
 
   useEffect(() => {
     if (!chartInstance.current || !preview) return;
@@ -2723,6 +2827,130 @@ export default function App() {
       return { ...current, [zone]: [...current[zone], field] };
     });
     setStatus(`Mapped ${field} to ${dropZoneLabels[zone]}.`);
+  }
+
+  async function refreshProjectArtifacts() {
+    const [templates, reports] = await Promise.all([listAnalysisTemplates(), listReports()]);
+    setProjectTemplates(templates);
+    setProjectReports(reports);
+    setSelectedReportId((current) => current ?? reports[0]?.id ?? null);
+  }
+
+  function applyAnalysisRun(run: AnalysisRun) {
+    setAnalysis(run);
+    if (run.method === "distribution") {
+      setDistributionRun(run as DistributionRun);
+      setActiveAnalyzePlatform("distribution");
+    } else if (run.method === "tabulate") {
+      setTabulateRun(run as TabulateRun);
+      setActiveAnalyzePlatform("tabulate");
+    } else if (run.method === "pareto") {
+      setParetoRun(run as ParetoRun);
+      setActiveAnalyzePlatform("pareto");
+    } else if (run.method === "gauge_rr") {
+      setGaugeRun(run as GaugeRRRun);
+      setActiveAnalyzePlatform("gaugeRR");
+    } else if (run.method === "variability_chart") {
+      setVariabilityRun(run as VariabilityRun);
+      setActiveAnalyzePlatform("variability");
+    } else if (run.method === "reliability_survival") {
+      setReliabilityRun(run as ReliabilityRun);
+      setActiveAnalyzePlatform("reliability");
+    } else if (run.method === "process_screening") {
+      setProcessScreeningRun(run as ProcessScreeningRun);
+      setActiveAnalyzePlatform("processScreening");
+    } else if (run.method === "fit_y_by_x") {
+      setFitYByXRun(run as FitYByXRun);
+      setOnewayRun(null);
+      setActiveAnalyzePlatform("fitYByX");
+    } else if (run.method === "oneway_anova") {
+      setOnewayRun(run as OnewayRun);
+      setFitYByXRun(null);
+      setActiveAnalyzePlatform("fitYByX");
+    } else if (run.method === "multivariate") {
+      setMultivariateRun(run as MultivariateRun);
+      setActiveAnalyzePlatform("multivariate");
+    } else if (run.method === "control_chart") {
+      setControlChartRun(run as ControlChartRun);
+      setActiveAnalyzePlatform("controlChart");
+    } else if (run.method === "process_capability") {
+      setCapabilityRun(run as ProcessCapabilityRun);
+      setActiveAnalyzePlatform("capability");
+    }
+  }
+
+  function buildActiveTemplate(): { name: string; description: string; method: AnalysisMethod; columns: string[]; parameters: Record<string, unknown> } | null {
+    if (!preview) return null;
+    if (activeAnalyzePlatform === "distribution") return { name: "Distribution launch", description: "Y, By, Freq, and Weight role assignment.", method: "distribution", columns: distributionY, parameters: { by: distributionBy, freq: distributionFreq, weight: distributionWeight } };
+    if (activeAnalyzePlatform === "tabulate") return { name: "Tabulate launch", description: "Summary columns and grouping roles.", method: "tabulate", columns: tabulateY, parameters: { group_by: tabulateGroups } };
+    if (activeAnalyzePlatform === "pareto" && paretoCategory) return { name: "Pareto launch", description: "Category, count, and By roles.", method: "pareto", columns: [paretoCategory], parameters: { count: paretoCount, by: paretoBy } };
+    if (activeAnalyzePlatform === "gaugeRR" && gaugeMeasurement) return { name: "Gauge R&R launch", description: "Measurement, Part, and Operator roles.", method: "gauge_rr", columns: [gaugeMeasurement], parameters: { part: gaugePart, operator: gaugeOperator } };
+    if (activeAnalyzePlatform === "variability" && variabilityY) return { name: "Variability launch", description: "Y, X, and By grouping roles.", method: "variability_chart", columns: [variabilityY], parameters: { x: variabilityX, by: variabilityBy } };
+    if (activeAnalyzePlatform === "reliability" && reliabilityTime) return { name: "Reliability launch", description: "Time, event, and By roles.", method: "reliability_survival", columns: [reliabilityTime], parameters: { event: reliabilityEvent, by: reliabilityBy } };
+    if (activeAnalyzePlatform === "processScreening") return { name: "Process Screening launch", description: "Screen selected process columns.", method: "process_screening", columns: processScreeningColumns, parameters: {} };
+    if (activeAnalyzePlatform === "fitYByX" && fitYResponse && fitXFactor) return { name: "Fit Y by X launch", description: "Y and X roles for bivariate fitting.", method: onewayRun ? "oneway_anova" : "fit_y_by_x", columns: [fitYResponse, fitXFactor], parameters: {} };
+    if (activeAnalyzePlatform === "multivariate") return { name: "Multivariate launch", description: "Numeric Y columns for correlation screening.", method: "multivariate", columns: multivariateY, parameters: {} };
+    if (activeAnalyzePlatform === "controlChart" && controlChartY) return { name: "Control Chart launch", description: "Y, subgroup/time, phase, and chart type.", method: "control_chart", columns: [controlChartY], parameters: { x: controlChartX, phase: controlChartPhase, sample_size: controlChartSampleSize, chart_type: controlChartType } };
+    if (activeAnalyzePlatform === "capability" && capabilityY) return { name: "Capability launch", description: "Y and specification limits.", method: "process_capability", columns: [capabilityY], parameters: { lsl: capabilityLsl, target: capabilityTarget, usl: capabilityUsl } };
+    return null;
+  }
+
+  function currentReportableResult(): { type: "analysis" | "model"; id: string; title: string } | null {
+    if (fitRun) return { type: "model", id: fitRun.id, title: `Fit Model: ${fitRun.responses.join(", ")}` };
+    if (model) return { type: "model", id: model.id, title: `Linear Model: ${model.target}` };
+    const run = processScreeningRun ?? reliabilityRun ?? variabilityRun ?? gaugeRun ?? paretoRun ?? tabulateRun ?? distributionRun ?? onewayRun ?? fitYByXRun ?? multivariateRun ?? controlChartRun ?? capabilityRun ?? analysis;
+    return run ? { type: "analysis", id: run.id, title: `Analysis: ${run.method}` } : null;
+  }
+
+  async function handleSaveActiveTemplate() {
+    if (!preview || !activeTemplate) {
+      setStatus("Open an analysis platform and assign required roles before saving a template.");
+      return;
+    }
+    const template = await createAnalysisTemplate({
+      dataset_id: preview.dataset.id,
+      name: activeTemplate.name,
+      description: activeTemplate.description,
+      method: activeTemplate.method,
+      columns: activeTemplate.columns,
+      parameters: activeTemplate.parameters
+    });
+    await refreshProjectArtifacts();
+    setStatus(`Saved template ${template.name}.`);
+  }
+
+  async function handleRunSavedTemplate(templateId: string) {
+    const run = await runAnalysisTemplate(templateId);
+    applyAnalysisRun(run);
+    await refreshProjectArtifacts();
+    setStatus(`Ran template as ${run.id}.`);
+  }
+
+  async function handleCreateReportDraft() {
+    const report = await createReport(newReportName.trim() || "Untitled report");
+    await refreshProjectArtifacts();
+    setSelectedReportId(report.id);
+    setStatus(`Created report ${report.name}.`);
+  }
+
+  async function handleAddCurrentResultToReport() {
+    const reportId = selectedReportId ?? projectReports[0]?.id;
+    if (!reportId || !activeReportable) {
+      setStatus("Select a report and run an analysis before adding a block.");
+      return;
+    }
+    const report = await addReportBlock(reportId, {
+      type: activeReportable.type,
+      title: activeReportable.title,
+      ref_id: activeReportable.id
+    });
+    await refreshProjectArtifacts();
+    setSelectedReportId(report.id);
+    setStatus(`Added ${activeReportable.title} to ${report.name}.`);
+  }
+
+  function handleOpenReport(reportId: string) {
+    window.open(reportExportUrl(reportId), "_blank", "noopener,noreferrer");
   }
 
   function handleClear(zone: DropZoneKey, field: string) {
@@ -3269,6 +3497,9 @@ export default function App() {
           <button className={activeAnalyzePlatform === "graph" ? "menu-button active" : "menu-button"} onClick={() => setActiveAnalyzePlatform("graph")}>
             Graph
           </button>
+          <button className={activeAnalyzePlatform === "project" ? "menu-button active" : "menu-button"} onClick={() => { refreshProjectArtifacts(); setActiveAnalyzePlatform("project"); }}>
+            Project
+          </button>
           <button className={activeAnalyzePlatform === "controlChart" ? "menu-button active" : "menu-button"} onClick={openControlChartPlatform}>
             SPC
           </button>
@@ -3277,12 +3508,30 @@ export default function App() {
       </header>
 
       <section className="builder-title">
-        <strong>{activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "variability" ? "Variability Chart" : activeAnalyzePlatform === "reliability" ? "Reliability / Survival" : activeAnalyzePlatform === "processScreening" ? "Process Screening" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : activeAnalyzePlatform === "doe" ? "DOE" : "Graph Builder"}</strong>
+        <strong>{activeAnalyzePlatform === "project" ? "Project Workspace" : activeAnalyzePlatform === "fitModel" ? "Model Specification" : activeAnalyzePlatform === "distribution" ? "Distribution" : activeAnalyzePlatform === "tabulate" ? "Tabulate" : activeAnalyzePlatform === "pareto" ? "Pareto" : activeAnalyzePlatform === "gaugeRR" ? "Gauge R&R" : activeAnalyzePlatform === "variability" ? "Variability Chart" : activeAnalyzePlatform === "reliability" ? "Reliability / Survival" : activeAnalyzePlatform === "processScreening" ? "Process Screening" : activeAnalyzePlatform === "multivariate" ? "Multivariate" : activeAnalyzePlatform === "fitYByX" ? "Fit Y by X" : activeAnalyzePlatform === "controlChart" ? "Control Chart Builder" : activeAnalyzePlatform === "capability" ? "Process Capability" : activeAnalyzePlatform === "doe" ? "DOE" : "Graph Builder"}</strong>
         {preview ? <em>{preview.dataset.name}</em> : null}
         <span>{status}</span>
       </section>
 
-      {activeAnalyzePlatform === "fitModel" ? (
+      {activeAnalyzePlatform === "project" ? (
+        <ProjectWorkspace
+          datasetName={preview?.dataset.name ?? null}
+          templates={projectTemplates}
+          reports={projectReports}
+          selectedReportId={selectedReportId}
+          reportName={newReportName}
+          activeTemplateName={activeTemplate?.name ?? "No launch state selected"}
+          activeTemplateDescription={activeTemplate?.description ?? "Open an analysis platform and assign the required roles to save a reusable template."}
+          activeResultLabel={activeReportable?.title ?? null}
+          onSelectReport={setSelectedReportId}
+          onReportNameChange={setNewReportName}
+          onCreateReport={handleCreateReportDraft}
+          onSaveTemplate={handleSaveActiveTemplate}
+          onRunTemplate={handleRunSavedTemplate}
+          onAddResultToReport={handleAddCurrentResultToReport}
+          onOpenReport={handleOpenReport}
+        />
+      ) : activeAnalyzePlatform === "fitModel" ? (
         <section className="model-spec-platform">
           <aside className="model-select-columns">
             <div className="column-header">{columns.length} Columns</div>

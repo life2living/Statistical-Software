@@ -53,11 +53,46 @@ export interface ChartSpec {
   layout: Record<string, unknown>;
 }
 
+export type AnalysisMethod = "descriptive" | "distribution" | "fit_y_by_x" | "oneway_anova" | "multivariate" | "correlation" | "spc" | "control_chart" | "process_capability" | "tabulate" | "pareto" | "gauge_rr" | "variability_chart" | "reliability_survival" | "process_screening";
+
 export interface AnalysisRun {
   id: string;
-  method: string;
+  dataset_id?: string;
+  dataset_version?: number;
+  method: AnalysisMethod | string;
+  inputs?: Record<string, unknown>;
   outputs: Record<string, unknown>;
   interpretation: string[];
+  status?: "completed" | "failed";
+  created_at?: string;
+}
+
+export interface AnalysisTemplate {
+  id: string;
+  project_id: string;
+  dataset_id: string;
+  name: string;
+  description: string;
+  method: AnalysisMethod;
+  columns: string[];
+  parameters: Record<string, unknown>;
+  steps: Record<string, unknown>[];
+  created_at: string;
+}
+
+export interface ReportBlock {
+  type: "markdown" | "chart" | "analysis" | "model";
+  title: string;
+  ref_id?: string | null;
+  body?: string | null;
+}
+
+export interface Report {
+  id: string;
+  project_id: string;
+  name: string;
+  blocks: ReportBlock[];
+  created_at: string;
 }
 
 export interface DistributionGroup {

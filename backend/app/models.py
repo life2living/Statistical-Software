@@ -220,11 +220,36 @@ class CreateProjectRequest(BaseModel):
     description: str = ""
 
 
+class CreateReportRequest(BaseModel):
+    project_id: str = "prj_demo"
+    name: str
+
+
+class AddReportBlockRequest(BaseModel):
+    type: Literal["markdown", "chart", "analysis", "model"]
+    title: str
+    ref_id: str | None = None
+    body: str | None = None
+
+
 class AnalysisTemplate(BaseModel):
     id: str
     project_id: str
     name: str
     description: str = ""
-    steps: list[dict[str, Any]]
+    dataset_id: str
+    method: AnalysisMethod
+    columns: list[str] = Field(default_factory=list)
+    steps: list[dict[str, Any]] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+
+
+class CreateAnalysisTemplateRequest(BaseModel):
+    project_id: str = "prj_demo"
+    dataset_id: str
+    name: str
+    description: str = ""
+    method: AnalysisMethod
+    columns: list[str] = Field(default_factory=list)
+    parameters: dict[str, Any] = Field(default_factory=dict)

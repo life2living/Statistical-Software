@@ -48,6 +48,6 @@
 
 - [ ] PostgreSQL/TimescaleDB storage, Parquet snapshots, and result cache.
 - [ ] Async worker queue for long-running analyses.
-- [ ] Report builder with exportable HTML/PDF.
-- [ ] Saved reusable analysis templates.
+- [ ] Report builder with exportable HTML/PDF. HTML export first slice is implemented; PDF export remains.
+- [x] Saved reusable analysis templates.
 - [ ] Audit log, permissions, and deployment hardening.

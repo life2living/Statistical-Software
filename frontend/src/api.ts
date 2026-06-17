@@ -1,4 +1,4 @@
-import type { AnalysisRun, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ProcessScreeningRun, ProfilerOptimizeResult, ReliabilityRun, TabulateRun, VariabilityRun } from "./types";
+import type { AnalysisMethod, AnalysisRun, AnalysisTemplate, ChartSpec, ControlChartRun, Dataset, DatasetPreview, DistributionRun, DoeFactor, FitModelRun, FitYByXRun, GaugeRRRun, ModelRun, MultivariateRun, OnewayRun, ParetoRun, ProcessCapabilityRun, ProcessScreeningRun, ProfilerOptimizeResult, ReliabilityRun, Report, ReportBlock, TabulateRun, VariabilityRun } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -55,6 +55,53 @@ export function saveChart(spec: ChartSpec): Promise<ChartSpec & { id: string }> 
     method: "POST",
     body: JSON.stringify(spec)
   });
+}
+
+export function listAnalysisTemplates(projectId = "prj_demo"): Promise<AnalysisTemplate[]> {
+  return request<AnalysisTemplate[]>(`/analysis/templates?project_id=${encodeURIComponent(projectId)}`);
+}
+
+export function createAnalysisTemplate(template: {
+  project_id?: string;
+  dataset_id: string;
+  name: string;
+  description?: string;
+  method: AnalysisMethod;
+  columns: string[];
+  parameters?: Record<string, unknown>;
+}): Promise<AnalysisTemplate> {
+  return request<AnalysisTemplate>("/analysis/templates", {
+    method: "POST",
+    body: JSON.stringify({ project_id: "prj_demo", parameters: {}, ...template })
+  });
+}
+
+export function runAnalysisTemplate(templateId: string): Promise<AnalysisRun> {
+  return request<AnalysisRun>(`/analysis/templates/${templateId}/run`, {
+    method: "POST"
+  });
+}
+
+export function listReports(projectId = "prj_demo"): Promise<Report[]> {
+  return request<Report[]>(`/reports?project_id=${encodeURIComponent(projectId)}`);
+}
+
+export function createReport(name: string, projectId = "prj_demo"): Promise<Report> {
+  return request<Report>("/reports", {
+    method: "POST",
+    body: JSON.stringify({ project_id: projectId, name })
+  });
+}
+
+export function addReportBlock(reportId: string, block: ReportBlock): Promise<Report> {
+  return request<Report>(`/reports/${reportId}/blocks`, {
+    method: "POST",
+    body: JSON.stringify(block)
+  });
+}
+
+export function reportExportUrl(reportId: string): string {
+  return `${API_BASE}/reports/${reportId}/export/html`;
 }
 
 export function runDescriptive(datasetId: string, columns: string[]): Promise<AnalysisRun> {
